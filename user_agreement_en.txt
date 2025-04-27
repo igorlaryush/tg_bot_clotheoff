@@ -1,0 +1,11 @@
+**User Agreement**
+
+Please read these terms carefully before using the bot.
+
+1. Purpose: This bot uses the Clothoff API for image processing demonstrations.
+2. Responsible Use: You agree to use the bot ethically and responsibly. Do not process images without consent or for malicious purposes.
+3. Data: Processed images are handled according to Clothoff's policies. Your user ID and settings are stored for bot functionality.
+4. Disclaimer: Results depend on the API and may not always be accurate or appropriate. Use at your own risk.
+5. Changes: These terms may be updated. Continued use implies acceptance of changes.
+
+By clicking "Accept", you confirm you have read, understood, and agree to these terms.
