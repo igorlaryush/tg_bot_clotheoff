@@ -10,6 +10,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
     Application,
+    CallbackQueryHandler,
 )
 
 # Импортируем наши модули
@@ -52,7 +53,9 @@ async def main():
     # --- Register Handlers ---
     ptb_app.add_handler(CommandHandler("start", telegram_handlers.start))
     ptb_app.add_handler(CommandHandler("help", telegram_handlers.help_command))
+    ptb_app.add_handler(CommandHandler("settings", telegram_handlers.settings_command))
     ptb_app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, telegram_handlers.handle_photo))
+    ptb_app.add_handler(CallbackQueryHandler(telegram_handlers.handle_callback_query))
     # Добавьте другие обработчики здесь, если нужно
 
     # --- Initialize PTB Application (starts internal processes) ---

@@ -5,6 +5,8 @@ from telegram.error import TelegramError
 
 import bot_state # Очередь и ожидающие запросы
 import db        # Функции БД
+import config # <-- Added import
+from localization import get_text # Импортируем get_text
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ async def process_results_queue(app: Application):
             user_id = request_info.get("user_id")
             original_message_id = request_info.get("message_id") # ID исходного сообщения с фото
             status_message_id = request_info.get("status_message_id") # ID сообщения "Processing..."
+            user_lang = request_info.get("lang", config.DEFAULT_LANGUAGE) # Получаем язык пользователя
 
             if not chat_id or not user_id:
                 logger.error(f"Missing chat_id or user_id in pending_requests for id_gen: {id_gen}")
@@ -50,9 +53,11 @@ async def process_results_queue(app: Application):
             try:
                 if status == '200' and image_data:
                     logger.info(f"Sending processed image for id_gen {id_gen} to chat_id {chat_id} (user: {user_id})")
-                    caption = f"✅ Processed image (ID: {id_gen})."
+                    # --- Используем локализованный caption ---
                     if processing_time:
-                        caption += f"\nProcessing time: {processing_time}s"
+                         caption = get_text("result_caption", user_lang).format(id_gen=id_gen[:8], time=processing_time) # Сокращаем ID в ответе
+                    else:
+                         caption = get_text("result_caption_no_time", user_lang).format(id_gen=id_gen[:8])
 
                     await app.bot.send_photo(
                         chat_id=chat_id,
@@ -71,11 +76,12 @@ async def process_results_queue(app: Application):
                              logger.warning(f"Could not delete status message {status_message_id} for {id_gen}: {del_err}")
 
                 else:
+                    # --- Обработка ошибки с локализацией ---
                     # Обработка не удалась
                     error_msg = error_message or f"Processing failed (status {status})."
                     logger.warning(f"Processing failed for id_gen {id_gen} (user {user_id}, chat {chat_id}): {error_msg}")
 
-                    final_error_message = f"❌ Processing failed for image (ID: {id_gen}).\nReason: {error_msg}"
+                    final_error_message = get_text("processing_failed", user_lang).format(id_gen=id_gen[:8], reason=error_msg)
 
                     # Обновляем сообщение "Processing..." текстом ошибки или отправляем новое
                     if status_message_id:
@@ -100,11 +106,16 @@ async def process_results_queue(app: Application):
                         )
 
             except TelegramError as send_err:
+                 # --- Уведомление об ошибке отправки ---
                 logger.error(f"Failed to send result/error for id_gen {id_gen} to chat_id {chat_id} (user: {user_id}): {send_err}")
                 # Попытка уведомить об ошибке отправки, если предыдущее не удалось
                 if status != '200': # Только если была ошибка обработки
                      try:
-                          await app.bot.send_message(chat_id=chat_id, text=f"Failed to deliver processing result for ID: {id_gen}. Error: {send_err}", reply_to_message_id=original_message_id)
+                          await app.bot.send_message(
+                                chat_id=chat_id,
+                                text=get_text("failed_to_send_result", user_lang).format(id_gen=id_gen[:8], error=send_err),
+                                reply_to_message_id=original_message_id
+                          )
                      except Exception as final_err:
                           logger.error(f"Also failed to send final error notification to chat_id {chat_id}: {final_err}")
             except Exception as e:

@@ -25,6 +25,8 @@ if not WEBHOOK_SECRET_PATH:
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-dev") # Имя БД тоже в конфиг
 
+DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ru") # Язык по умолчанию для новых пользователей
+SUPPORTED_LANGUAGES = ['en', 'ru']
 
 CLOTHOFF_API_URL = "https://public-api.clothoff.net/undress"
 
