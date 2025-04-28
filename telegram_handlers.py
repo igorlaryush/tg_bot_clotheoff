@@ -3,8 +3,9 @@ import uuid
 from io import BytesIO
 import aiohttp
 from functools import wraps
+import os
 
-from telegram import Update, BotCommand, User
+from telegram import Update, BotCommand, User, InputFile
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -16,6 +17,60 @@ import keyboards # Импорт клавиатур
 from localization import get_text, get_agreement_text # Импорт текстов
 
 logger = logging.getLogger(__name__)
+
+# --- Карта изображений для сообщений ---
+# Вам нужно будет создать эти файлы в папке images
+IMAGE_MAP = {
+    "start": "images/welcome.png",
+    "help": "images/help.png",
+    "settings": "images/settings.png",
+    # Добавьте другие ключи и пути к изображениям здесь
+}
+
+# --- Вспомогательная функция для отправки сообщений с фото ---
+async def send_message_with_photo(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    text: str,
+    image_key: str | None = None, # Ключ из IMAGE_MAP
+    reply_markup=None,
+    parse_mode=None,
+    reply_to_message_id=None
+):
+    """Отправляет сообщение с фото, если указан image_key и файл существует."""
+    photo_path = IMAGE_MAP.get(image_key) if image_key else None
+
+    if photo_path and os.path.exists(photo_path):
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=InputFile(photo_path),
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                reply_to_message_id=reply_to_message_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to send photo {photo_path} to chat {chat_id}: {e}")
+            # Если отправка фото не удалась, отправляем просто текст
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                reply_to_message_id=reply_to_message_id
+            )
+    else:
+        if photo_path:
+            logger.warning(f"Image file not found for key '{image_key}': {photo_path}")
+        # Отправляем только текст, если ключ не указан или файла нет
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id
+        )
 
 # --- Декоратор для проверки соглашения ---
 def require_agreement(func):
@@ -66,11 +121,12 @@ async def send_agreement_prompt(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Шаг 2: Отправляем текст соглашения и кнопки
     agreement_text = get_agreement_text(user_lang)
-    await context.bot.send_message(
+    await send_message_with_photo(
+        context=context,
         chat_id=chat_id,
         text=f"{get_text('agreement_prompt', user_lang)}\n\n{agreement_text}",
         reply_markup=keyboards.get_agreement_keyboard(user_lang),
-        parse_mode=ParseMode.MARKDOWN # Или HTML, если используете теги
+        parse_mode=ParseMode.MARKDOWN
     )
 
 # --- Команды ---
@@ -106,16 +162,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_agreement_prompt(update, context, user_data)
     else:
         # Если уже согласился, просто приветствуем
-        await update.message.reply_text(
-            get_text("start_message", user_lang).format(user_name=user.first_name),
+        await send_message_with_photo(
+            context=context,
+            chat_id=chat_id,
+            text=get_text("start_message", user_lang).format(user_name=user.first_name),
+            image_key="start",
             parse_mode=ParseMode.MARKDOWN
         )
 
 @require_agreement # Теперь /help требует согласия
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = context.user_data['db_user'].get("language", config.DEFAULT_LANGUAGE)
-    await update.message.reply_text(
-        get_text("help_message", user_lang),
+    await send_message_with_photo(
+        context=context,
+        chat_id=update.effective_chat.id,
+        text=get_text("help_message", user_lang),
+        image_key="help",
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -225,8 +287,11 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += get_text("settings_choose_option", user_lang)
 
-    await update.message.reply_text(
+    await send_message_with_photo(
+        context=context,
+        chat_id=update.effective_chat.id,
         text=text,
+        image_key="settings",
         reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
     )
 
