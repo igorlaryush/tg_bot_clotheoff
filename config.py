@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # --- Configuration Loading ---
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CLOTHOFF_API_KEY = os.getenv("CLOTHOFF_API_KEY")
@@ -23,7 +23,7 @@ if not WEBHOOK_SECRET_PATH:
     # Проще попросить пользователя добавить его вручную.
 
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-dev") # Имя БД тоже в конфиг
+FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-prod") # Имя БД тоже в конфиг
 
 DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ru") # Язык по умолчанию для новых пользователей
 SUPPORTED_LANGUAGES = ['en', 'ru']
@@ -33,20 +33,20 @@ CLOTHOFF_API_URL = "https://public-api.clothoff.net/undress"
 # --- Calculate derived URLs ---
 if BASE_URL:
     # Убираем / в конце, если он есть, перед добавлением путей
-    base_ngrok_url = BASE_URL.rstrip('/')
-    CLOTHOFF_RECEIVER_URL = f"{base_ngrok_url}/webhook"
-    TELEGRAM_RECEIVER_URL = f"{base_ngrok_url}/{WEBHOOK_SECRET_PATH}"
+    base_url = BASE_URL.rstrip('/')
+    CLOTHOFF_RECEIVER_URL = f"{base_url}/webhook"
+    TELEGRAM_RECEIVER_URL = f"{base_url}/{WEBHOOK_SECRET_PATH}"
 else:
     CLOTHOFF_RECEIVER_URL = None
     TELEGRAM_RECEIVER_URL = None
-    logger.error("NGROK_URL is not set in environment variables!")
+    logger.error("BASE_URL is not set in environment variables!")
 
 # --- Validate Configuration ---
 # Добавляем проверку GCP_PROJECT_ID и NGROK_URL
 REQUIRED_VARS = {
     "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
     "CLOTHOFF_API_KEY": CLOTHOFF_API_KEY,
-    "NGROK_URL": BASE_URL,
+    "BASE_URL": BASE_URL,
     "GCP_PROJECT_ID": GCP_PROJECT_ID
 }
 
