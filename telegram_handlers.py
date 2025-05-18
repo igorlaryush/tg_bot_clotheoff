@@ -106,18 +106,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_agreement_prompt(update, context, user_data)
     else:
         # Если уже согласился, просто приветствуем
-        await update.message.reply_text(
-            get_text("start_message", user_lang).format(user_name=user.first_name),
-            parse_mode=ParseMode.MARKDOWN
-        )
+        # Отправляем приветственное изображение
+        try:
+            with open('images/welcome.png', 'rb') as photo:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo,
+                    caption=get_text("start_message", user_lang).format(user_name=user.first_name),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+        except FileNotFoundError:
+            logger.error("welcome.png not found. Sending only text message for /start.")
+            await update.message.reply_text(
+                get_text("start_message", user_lang).format(user_name=user.first_name),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Error sending welcome photo for /start: {e}")
+            await update.message.reply_text(
+                get_text("start_message", user_lang).format(user_name=user.first_name),
+                parse_mode=ParseMode.MARKDOWN
+            )
 
 @require_agreement # Теперь /help требует согласия
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = context.user_data['db_user'].get("language", config.DEFAULT_LANGUAGE)
-    await update.message.reply_text(
-        get_text("help_message", user_lang),
-        parse_mode=ParseMode.MARKDOWN
-    )
+    chat_id = update.effective_chat.id # Получаем chat_id
+    try:
+        with open('images/help.png', 'rb') as photo:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=get_text("help_message", user_lang),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    except FileNotFoundError:
+        logger.error("help.png not found. Sending only text message for /help.")
+        await update.message.reply_text(
+            get_text("help_message", user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception as e:
+        logger.error(f"Error sending help photo for /help: {e}")
+        await update.message.reply_text(
+            get_text("help_message", user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 @require_agreement # Обработка фото требует согласия
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,6 +249,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data['db_user']
     user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
     current_options = user_data.get("processing_options", {})
+    chat_id = update.effective_chat.id # Получаем chat_id
 
     text = f"{get_text('settings_title', user_lang)}\n\n"
     # Можно добавить отображение текущих настроек текстом, но клавиатура уже показывает их
@@ -225,10 +260,26 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += get_text("settings_choose_option", user_lang)
 
-    await update.message.reply_text(
-        text=text,
-        reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-    )
+    try:
+        with open('images/settings.png', 'rb') as photo:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=text,
+                reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+            )
+    except FileNotFoundError:
+        logger.error("settings.png not found. Sending only text message for /settings.")
+        await update.message.reply_text(
+            text=text,
+            reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+        )
+    except Exception as e:
+        logger.error(f"Error sending settings photo for /settings: {e}")
+        await update.message.reply_text(
+            text=text,
+            reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+        )
 
 # --- Обработчик Callback Query (нажатия кнопок) ---
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):

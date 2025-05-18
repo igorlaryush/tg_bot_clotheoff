@@ -1,0 +1,9 @@
+.env*          # все .env-файлы
+*.pyc
+__pycache__/
+.vscode/
+.idea/
+tests/
+venv/
+Dockerfile.dev
+docker-compose.yml

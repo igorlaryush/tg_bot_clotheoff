@@ -10,8 +10,8 @@ load_dotenv(override=True)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CLOTHOFF_API_KEY = os.getenv("CLOTHOFF_API_KEY")
-NGROK_URL = os.getenv("NGROK_URL")
-WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", '5000'))
+BASE_URL = os.getenv("BASE_URL")
+WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", '8080'))
 # Генерируем секретный путь один раз при загрузке, если он не задан
 WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH")
 if not WEBHOOK_SECRET_PATH:
@@ -31,9 +31,9 @@ SUPPORTED_LANGUAGES = ['en', 'ru']
 CLOTHOFF_API_URL = "https://public-api.clothoff.net/undress"
 
 # --- Calculate derived URLs ---
-if NGROK_URL:
+if BASE_URL:
     # Убираем / в конце, если он есть, перед добавлением путей
-    base_ngrok_url = NGROK_URL.rstrip('/')
+    base_ngrok_url = BASE_URL.rstrip('/')
     CLOTHOFF_RECEIVER_URL = f"{base_ngrok_url}/webhook"
     TELEGRAM_RECEIVER_URL = f"{base_ngrok_url}/{WEBHOOK_SECRET_PATH}"
 else:
@@ -46,7 +46,7 @@ else:
 REQUIRED_VARS = {
     "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
     "CLOTHOFF_API_KEY": CLOTHOFF_API_KEY,
-    "NGROK_URL": NGROK_URL,
+    "NGROK_URL": BASE_URL,
     "GCP_PROJECT_ID": GCP_PROJECT_ID
 }
 
