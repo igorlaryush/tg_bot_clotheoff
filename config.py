@@ -5,69 +5,58 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# --- Configuration Loading ---
-load_dotenv(override=False)
+
+load_dotenv(override=True)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CLOTHOFF_API_KEY = os.getenv("CLOTHOFF_API_KEY")
-BASE_URL = os.getenv("BASE_URL")
-WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", '8080'))
-# Генерируем секретный путь один раз при загрузке, если он не задан
+PORT = int(os.getenv("PORT", '8080'))
+print(PORT)
+
 WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH")
+logger.info("CONFIG.PY: Read from env: RAW WEBHOOK_SECRET_PATH_FROM_ENV = '%s'", WEBHOOK_SECRET_PATH)
+
 if not WEBHOOK_SECRET_PATH:
-    WEBHOOK_SECRET_PATH = secrets.token_urlsafe(32)
-    logger.warning(f"WEBHOOK_SECRET_PATH not set, generated: {WEBHOOK_SECRET_PATH}. "
-                   f"Set this in your .env file for persistence across restarts.")
-    # Опционально: можно записать сгенерированный путь обратно в .env,
-    # но это требует дополнительных библиотек и усложняет логику.
-    # Проще попросить пользователя добавить его вручную.
+    raise ValueError("WEBHOOK_SECRET_PATH is not set in environment variables.")
 
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-prod") # Имя БД тоже в конфиг
+FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-prod")
 
-DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ru") # Язык по умолчанию для новых пользователей
+DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ru")
 SUPPORTED_LANGUAGES = ['en', 'ru']
 
 CLOTHOFF_API_URL = "https://public-api.clothoff.net/undress"
 
-# --- Calculate derived URLs ---
+
+BASE_URL = os.getenv("BASE_URL")
+logger.info(f"CONFIG.PY: Read from env: RAW BASE_URL = '{BASE_URL}'")
+
 if BASE_URL:
-    # Убираем / в конце, если он есть, перед добавлением путей
     base_url = BASE_URL.rstrip('/')
     CLOTHOFF_RECEIVER_URL = f"{base_url}/webhook"
     TELEGRAM_RECEIVER_URL = f"{base_url}/{WEBHOOK_SECRET_PATH}"
+    logger.info(f"CONFIG.PY: Final TELEGRAM_RECEIVER_URL = '{TELEGRAM_RECEIVER_URL}'")
 else:
     CLOTHOFF_RECEIVER_URL = None
     TELEGRAM_RECEIVER_URL = None
-    logger.error("BASE_URL is not set in environment variables!")
+    logger.warning("BASE_URL is not set in environment variables. Derived URLs (Telegram/Clothoff receiver) are None.")
 
-# --- Validate Configuration ---
-# Добавляем проверку GCP_PROJECT_ID и NGROK_URL
-REQUIRED_VARS = {
-    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
-    "CLOTHOFF_API_KEY": CLOTHOFF_API_KEY,
-    "BASE_URL": BASE_URL,
-    "GCP_PROJECT_ID": GCP_PROJECT_ID
-}
 
-missing_vars = [k for k, v in REQUIRED_VARS.items() if not v]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-
-# --- Logging Configuration ---
-# Вынесем настройку логгера сюда, чтобы она применялась раньше
 def setup_logging():
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO
     )
-    # Уменьшаем шум от библиотек
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("telegram.ext").setLevel(logging.INFO)
+    logging.getLogger("telegram.ext").setLevel(logging.DEBUG) # DEBUG для PTB
     logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("google.cloud.firestore").setLevel(logging.WARNING) # Уменьшаем логи Firestore
-    logging.getLogger("google.api_core.bidi").setLevel(logging.WARNING) # И от его зависимостей
+    logging.getLogger("google.cloud.firestore").setLevel(logging.WARNING)
+    logging.getLogger("google.api_core.bidi").setLevel(logging.WARNING)
     logging.getLogger('google.auth.compute_engine._metadata').setLevel(logging.WARNING)
+    logging.getLogger(__name__).setLevel(logging.DEBUG)
 
-setup_logging() # Вызываем настройку при импорте модуля
-logger.info("Configuration loaded.")
+
+setup_logging()
+logger.info("Configuration loading module executed.")
+
+logger.info("config.py loaded.")
