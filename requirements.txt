@@ -1,6 +1,11 @@
 # requirements.txt
+grpcio==1.72.0rc1
 python-telegram-bot[job-queue]>=20.0  # Use version 20+ for async/await syntax
 aiohttp>=3.8.0
 Flask>=2.0.0
 python-dotenv>=0.20.0
-requests # Keep for Flask example compatibility if needed, but aiohttp is preferred for async
+asgiref
+uvicorn
+google-cloud-firestore==2.20.2
+requests
+debugpy
