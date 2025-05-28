@@ -7,6 +7,8 @@ from telegram.ext import Application
 
 import config      # Для секретного пути Telegram
 import bot_state   # Для очереди результатов
+import payments    # Для обработки платежей
+import db          # Для работы с базой данных
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,121 @@ def setup_routes(ptb_app: Application):
         except Exception as e:
             logger.exception(f"Unexpected error processing Clothoff webhook: {e}")
             return jsonify({"error": "Internal Server Error"}), 500
+
+    @flask_app.route('/payment/callback', methods=['GET'])
+    async def streampay_callback_handler():
+        """Handles payment callbacks from StreamPay."""
+        if not config.STREAMPAY_ENABLED:
+            logger.warning("StreamPay callback received but StreamPay is not enabled")
+            return jsonify({"error": "StreamPay not enabled"}), 503
+
+        try:
+            # Получаем все query параметры
+            query_params = dict(request.args)
+            signature = request.headers.get('Signature')
+            
+            if not signature:
+                logger.error("StreamPay callback: Missing Signature header")
+                return jsonify({"error": "Missing signature"}), 400
+
+            # Формируем строку для проверки подписи
+            sorted_params = sorted(query_params.items())
+            query_string = '&'.join(f'{k}={v}' for k, v in sorted_params)
+            
+            logger.info(f"StreamPay callback received: {query_string}")
+            
+            # Проверяем подпись
+            if not payments.streampay_api.verify_callback_signature(query_string, signature):
+                logger.error(f"StreamPay callback: Invalid signature for params: {query_string}")
+                return jsonify({"error": "Invalid signature"}), 403
+
+            # Обрабатываем callback
+            success = await payments.process_payment_callback(query_params)
+            
+            if success:
+                # Если платеж успешен, уведомляем пользователя
+                if query_params.get('status') == 'success':
+                    external_id = query_params.get('external_id')
+                    if external_id:
+                        # Получаем информацию о заказе для уведомления
+                        order = await db.get_payment_order_by_external_id(external_id)
+                        if order and order.get('processed'):
+                            package_info = payments.get_package_info(order['package_id'], 'ru')  # Используем русский по умолчанию
+                            if package_info:
+                                new_balance = await db.get_user_photos_balance(order['user_id'])
+                                # Уведомляем пользователя (это нужно будет адаптировать)
+                                try:
+                                    from telegram_handlers import notify_payment_success
+                                    await notify_payment_success(
+                                        order['user_id'],
+                                        package_info['name'],
+                                        order['photos_count'],
+                                        new_balance
+                                    )
+                                except Exception as notify_err:
+                                    logger.error(f"Failed to notify user about payment success: {notify_err}")
+                
+                return jsonify({"message": "Callback processed successfully"}), 200
+            else:
+                return jsonify({"error": "Failed to process callback"}), 500
+
+        except Exception as e:
+            logger.exception(f"Unexpected error processing StreamPay callback: {e}")
+            return jsonify({"error": "Internal Server Error"}), 500
+
+    @flask_app.route('/payment/success', methods=['GET'])
+    def payment_success_page():
+        """Страница успешной оплаты."""
+        return """
+        <html>
+        <head><title>Payment Successful</title></head>
+        <body>
+            <h1>✅ Payment Successful!</h1>
+            <p>Your payment has been processed successfully. You can now return to the Telegram bot.</p>
+            <script>
+                setTimeout(function() {
+                    window.close();
+                }, 3000);
+            </script>
+        </body>
+        </html>
+        """
+
+    @flask_app.route('/payment/fail', methods=['GET'])
+    def payment_fail_page():
+        """Страница неудачной оплаты."""
+        return """
+        <html>
+        <head><title>Payment Failed</title></head>
+        <body>
+            <h1>❌ Payment Failed</h1>
+            <p>Your payment could not be processed. Please try again or contact support.</p>
+            <script>
+                setTimeout(function() {
+                    window.close();
+                }, 3000);
+            </script>
+        </body>
+        </html>
+        """
+
+    @flask_app.route('/payment/cancel', methods=['GET'])
+    def payment_cancel_page():
+        """Страница отмененной оплаты."""
+        return """
+        <html>
+        <head><title>Payment Cancelled</title></head>
+        <body>
+            <h1>❌ Payment Cancelled</h1>
+            <p>Your payment has been cancelled. You can try again anytime.</p>
+            <script>
+                setTimeout(function() {
+                    window.close();
+                }, 3000);
+            </script>
+        </body>
+        </html>
+        """
 
     # Возвращаем настроенное приложение Flask
     return flask_app

@@ -89,6 +89,7 @@ async def main():
     ptb_app.add_handler(CommandHandler("start", telegram_handlers.start))
     ptb_app.add_handler(CommandHandler("help", telegram_handlers.help_command))
     ptb_app.add_handler(CommandHandler("settings", telegram_handlers.settings_command))
+    ptb_app.add_handler(CommandHandler("balance", telegram_handlers.balance_command))
     ptb_app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, telegram_handlers.handle_photo))
     ptb_app.add_handler(CallbackQueryHandler(telegram_handlers.handle_callback_query))
     # Добавьте другие обработчики здесь, если нужно
@@ -125,6 +126,10 @@ async def main():
     logger.info("Scheduling Clothoff result processing task...")
     results_task = asyncio.create_task(queue_processor.process_results_queue(ptb_app))
     logger.info("Clothoff result processing task scheduled.")
+
+    logger.info("Scheduling notifications processing task...")
+    notifications_task = asyncio.create_task(queue_processor.process_notifications_queue(ptb_app))
+    logger.info("Notifications processing task scheduled.")
 
     await ptb_app.start()
     logger.info("PTB Application background tasks started.")
@@ -173,6 +178,15 @@ async def main():
             logger.info("Result processing task cancelled successfully.")
         except Exception as task_err:
              logger.error(f"Error during result processing task shutdown: {task_err}")
+
+        logger.info("Cancelling notifications processing task...")
+        notifications_task.cancel()
+        try:
+            await notifications_task
+        except asyncio.CancelledError:
+            logger.info("Notifications processing task cancelled successfully.")
+        except Exception as task_err:
+             logger.error(f"Error during notifications processing task shutdown: {task_err}")
 
         logger.info("Shutting down PTB application...")
         try:

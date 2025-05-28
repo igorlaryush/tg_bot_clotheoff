@@ -1,0 +1,48 @@
+packages:
+  starter:
+    name:
+      en: "Starter Pack"
+      ru: "Стартовый пакет"
+    description:
+      en: "Perfect for trying out the service"
+      ru: "Идеально для знакомства с сервисом"
+    photos: 5
+    price: 2.99
+    currency: "USD"
+    popular: false
+    
+  basic:
+    name:
+      en: "Basic Pack"
+      ru: "Базовый пакет"
+    description:
+      en: "Great value for regular use"
+      ru: "Отличное соотношение цены и качества"
+    photos: 15
+    price: 7.99
+    currency: "USD"
+    popular: true
+    
+  premium:
+    name:
+      en: "Premium Pack"
+      ru: "Премиум пакет"
+    description:
+      en: "Best deal for power users"
+      ru: "Лучшее предложение для активных пользователей"
+    photos: 50
+    price: 19.99
+    currency: "USD"
+    popular: false
+    
+  ultimate:
+    name:
+      en: "Ultimate Pack"
+      ru: "Максимальный пакет"
+    description:
+      en: "Unlimited processing for a month"
+      ru: "Безлимитная обработка на месяц"
+    photos: 200
+    price: 49.99
+    currency: "USD"
+    popular: false 

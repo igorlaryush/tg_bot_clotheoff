@@ -204,7 +204,109 @@ TEXTS = {
      "value_not_set": {
         "en": "Default",
         "ru": "По умолч.",
-     }
+     },
+
+    # --- Платежи и баланс ---
+    "balance_title": {
+        "en": "💰 Your Balance",
+        "ru": "💰 Ваш баланс",
+    },
+    "current_balance": {
+        "en": "Current balance: {balance} photos",
+        "ru": "Текущий баланс: {balance} фото",
+    },
+    "insufficient_balance": {
+        "en": "❌ Insufficient balance! You need {needed} photos, but you have only {current}.\n\nPlease purchase more photos to continue.",
+        "ru": "❌ Недостаточно средств! Вам нужно {needed} фото, а у вас только {current}.\n\nПожалуйста, купите больше фото для продолжения.",
+    },
+    "buy_photos": {
+        "en": "💳 Buy Photos",
+        "ru": "💳 Купить фото",
+    },
+    "payment_history": {
+        "en": "📋 Payment History",
+        "ru": "📋 История платежей",
+    },
+    "choose_package": {
+        "en": "Choose a package to purchase:",
+        "ru": "Выберите пакет для покупки:",
+    },
+    "package_details": {
+        "en": "📦 **{name}**\n\n{description}\n\n💎 Photos: {photos}\n💰 Price: ${price}\n\nConfirm your purchase?",
+        "ru": "📦 **{name}**\n\n{description}\n\n💎 Фото: {photos}\n💰 Цена: ${price}\n\nПодтвердить покупку?",
+    },
+    "confirm_purchase": {
+        "en": "✅ Confirm Purchase",
+        "ru": "✅ Подтвердить покупку",
+    },
+    "back_to_packages": {
+        "en": "⬅️ Back to Packages",
+        "ru": "⬅️ Назад к пакетам",
+    },
+    "cancel_button": {
+        "en": "❌ Cancel",
+        "ru": "❌ Отмена",
+    },
+    "creating_payment": {
+        "en": "⏳ Creating payment link...",
+        "ru": "⏳ Создаю ссылку для оплаты...",
+    },
+    "payment_link_created": {
+        "en": "💳 **Payment Link Created**\n\nPackage: {package_name}\nAmount: ${amount}\n\nClick the button below to proceed with payment:",
+        "ru": "💳 **Ссылка для оплаты создана**\n\nПакет: {package_name}\nСумма: ${amount}\n\nНажмите кнопку ниже для оплаты:",
+    },
+    "pay_now": {
+        "en": "💳 Pay Now",
+        "ru": "💳 Оплатить сейчас",
+    },
+    "payment_error": {
+        "en": "❌ Error creating payment. Please try again later.",
+        "ru": "❌ Ошибка создания платежа. Попробуйте позже.",
+    },
+    "payment_success": {
+        "en": "✅ **Payment Successful!**\n\nYou have purchased: {package_name}\nPhotos added: {photos}\nNew balance: {new_balance} photos\n\nThank you for your purchase!",
+        "ru": "✅ **Платеж успешен!**\n\nВы купили: {package_name}\nДобавлено фото: {photos}\nНовый баланс: {new_balance} фото\n\nСпасибо за покупку!",
+    },
+    "payment_failed": {
+        "en": "❌ Payment failed. Please try again or contact support.",
+        "ru": "❌ Платеж не прошел. Попробуйте снова или обратитесь в поддержку.",
+    },
+    "payment_cancelled": {
+        "en": "❌ Payment was cancelled.",
+        "ru": "❌ Платеж был отменен.",
+    },
+    "no_payment_history": {
+        "en": "📋 No payment history found.",
+        "ru": "📋 История платежей пуста.",
+    },
+    "payment_history_item": {
+        "en": "📦 {package_name}\n💰 ${amount} • {status}\n📅 {date}",
+        "ru": "📦 {package_name}\n💰 ${amount} • {status}\n📅 {date}",
+    },
+    "payment_status_pending": {
+        "en": "⏳ Pending",
+        "ru": "⏳ Ожидание",
+    },
+    "payment_status_success": {
+        "en": "✅ Paid",
+        "ru": "✅ Оплачено",
+    },
+    "payment_status_failed": {
+        "en": "❌ Failed",
+        "ru": "❌ Ошибка",
+    },
+    "payment_status_cancelled": {
+        "en": "❌ Cancelled",
+        "ru": "❌ Отменено",
+    },
+    "back_to_main": {
+        "en": "🏠 Main Menu",
+        "ru": "🏠 Главное меню",
+    },
+    "show_balance": {
+        "en": "💰 Balance",
+        "ru": "💰 Баланс",
+    }
 }
 
 # --- Получение текста ---

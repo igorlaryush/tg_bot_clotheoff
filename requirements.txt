@@ -9,3 +9,6 @@ uvicorn
 google-cloud-firestore==2.20.2
 requests
 debugpy
+PyNaCl>=1.5.0  # For StreamPay signature verification
+PyYAML>=6.0    # For payment packages configuration
+httpx>=0.24.0  # For async HTTP requests to StreamPay API

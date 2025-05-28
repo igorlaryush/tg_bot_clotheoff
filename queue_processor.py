@@ -133,3 +133,46 @@ async def process_results_queue(app: Application):
             logger.exception(f"Critical error in results processing loop: {e}")
             # Добавляем небольшую задержку перед повторной попыткой в случае общей ошибки цикла
             await asyncio.sleep(5)
+
+async def process_notifications_queue(app: Application):
+    """Processes payment notifications from the queue."""
+    logger.info("Notifications processing task started.")
+    while True:
+        try:
+            # Ждем уведомление из очереди
+            notification = await bot_state.notifications_queue.get()
+            
+            notification_type = notification.get("type")
+            user_id = notification.get("user_id")
+            chat_id = notification.get("chat_id")
+            text = notification.get("text")
+
+            if not all([notification_type, user_id, chat_id, text]):
+                logger.warning("Received incomplete notification from queue.")
+                bot_state.notifications_queue.task_done()
+                continue
+
+            logger.info(f"Processing {notification_type} notification for user {user_id}")
+
+            try:
+                await app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="Markdown"
+                )
+                logger.info(f"Successfully sent {notification_type} notification to user {user_id}")
+                
+            except TelegramError as send_err:
+                logger.error(f"Failed to send {notification_type} notification to user {user_id}: {send_err}")
+            except Exception as e:
+                logger.exception(f"Unexpected error sending {notification_type} notification to user {user_id}: {e}")
+
+            finally:
+                bot_state.notifications_queue.task_done()
+
+        except asyncio.CancelledError:
+            logger.info("Notifications processing task cancelled.")
+            break
+        except Exception as e:
+            logger.exception(f"Critical error in notifications processing loop: {e}")
+            await asyncio.sleep(5)

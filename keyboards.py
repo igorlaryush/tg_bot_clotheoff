@@ -1,5 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from localization import get_text, SUPPORTED_LANGUAGES # Импортируем строки и список языков
+import payments # Импортируем модуль платежей
 
 # --- Опции для настроек (как в config.py или здесь) ---
 PROCESSING_OPTIONS = {
@@ -96,4 +97,95 @@ def get_option_value_keyboard(option_key: str, lang: str, current_value: str) ->
     # Кнопка "Назад" в главное меню настроек
     keyboard.append([InlineKeyboardButton(get_text("back_button", lang), callback_data="back_to_settings:main")])
 
+    return InlineKeyboardMarkup(keyboard)
+
+# === Клавиатуры для платежей ===
+
+def get_payment_packages_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с доступными пакетами для покупки."""
+    keyboard = []
+    packages = payments.get_all_packages(lang)
+    
+    for package_id, package_info in packages.items():
+        if package_info:
+            # Формируем текст кнопки
+            popular_mark = "🔥 " if package_info.get('popular') else ""
+            button_text = f"{popular_mark}{package_info['name']}"
+            button_text += f"\n{package_info['photos']} фото - ${package_info['price']}"
+            
+            keyboard.append([InlineKeyboardButton(
+                button_text, 
+                callback_data=f"buy_package:{package_id}"
+            )])
+    
+    # Кнопка "Назад" или "Отмена"
+    keyboard.append([InlineKeyboardButton(
+        get_text("back_button", lang), 
+        callback_data="cancel_payment"
+    )])
+    
+    return InlineKeyboardMarkup(keyboard)
+
+def get_payment_confirmation_keyboard(package_id: str, lang: str) -> InlineKeyboardMarkup:
+    """Создает клавиатуру подтверждения покупки пакета."""
+    keyboard = [
+        [InlineKeyboardButton(
+            get_text("confirm_purchase", lang), 
+            callback_data=f"confirm_purchase:{package_id}"
+        )],
+        [InlineKeyboardButton(
+            get_text("back_to_packages", lang), 
+            callback_data="show_packages"
+        )],
+        [InlineKeyboardButton(
+            get_text("cancel_button", lang), 
+            callback_data="cancel_payment"
+        )]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_balance_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для управления балансом."""
+    keyboard = [
+        [InlineKeyboardButton(
+            get_text("buy_photos", lang), 
+            callback_data="show_packages"
+        )],
+        [InlineKeyboardButton(
+            get_text("payment_history", lang), 
+            callback_data="show_payment_history"
+        )],
+        [InlineKeyboardButton(
+            get_text("back_button", lang), 
+            callback_data="back_to_main"
+        )]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_payment_history_keyboard(lang: str, page: int = 0) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для истории платежей."""
+    keyboard = []
+    
+    # Кнопки навигации по страницам (если нужно)
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(
+            "⬅️ Назад", 
+            callback_data=f"payment_history_page:{page-1}"
+        ))
+    
+    nav_row.append(InlineKeyboardButton(
+        "Вперед ➡️", 
+        callback_data=f"payment_history_page:{page+1}"
+    ))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Кнопка "Назад к балансу"
+    keyboard.append([InlineKeyboardButton(
+        get_text("back_button", lang), 
+        callback_data="show_balance"
+    )])
+    
     return InlineKeyboardMarkup(keyboard)
