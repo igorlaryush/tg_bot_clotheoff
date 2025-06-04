@@ -8,6 +8,7 @@ import httpx
 import yaml
 from nacl.bindings import crypto_sign, crypto_sign_BYTES
 from nacl.signing import VerifyKey
+from nacl.encoding import HexEncoder
 from nacl.exceptions import BadSignatureError
 
 import config
@@ -41,8 +42,8 @@ class StreamPayAPI:
         
         try:
             private_key_hex = config.STREAMPAY_PRIVATE_KEY.strip()
-            if len(private_key_hex) != 64:
-                raise ValueError(f"Private key must be 64 hex characters (32 bytes), got {len(private_key_hex)}")
+            if len(private_key_hex) != 128:
+                raise ValueError(f"Private key must be 128 hex characters (32 bytes), got {len(private_key_hex)}")
             self.private_key = binascii.unhexlify(private_key_hex)
         except (ValueError, binascii.Error) as e:
             raise ValueError(f"Invalid private key format: {e}")
@@ -54,9 +55,8 @@ class StreamPayAPI:
         try:
             public_key_hex = config.STREAMPAY_PUBLIC_KEY.strip()
             if len(public_key_hex) != 64:
-                raise ValueError(f"Public key must be 64 hex characters (32 bytes), got {len(public_key_hex)}")
-            public_key_bytes = binascii.unhexlify(public_key_hex)
-            self.public_key = VerifyKey(public_key_bytes)
+                raise ValueError(f"Public key must be 128 hex characters (64 bytes), got {len(public_key_hex)}")
+            self.public_key = VerifyKey(public_key_hex, encoder=HexEncoder)
         except (ValueError, binascii.Error) as e:
             raise ValueError(f"Invalid public key format: {e}")
         
@@ -64,10 +64,9 @@ class StreamPayAPI:
     
     def _generate_signature(self, content: str) -> str:
         """Генерирует подпись для запроса."""
-        timestamp = datetime.utcnow().strftime('%Y%m%d:%H%M')
-        to_sign = content.encode('utf-8') + timestamp.encode('ascii')
-        signature = crypto_sign(to_sign, self.private_key)[:crypto_sign_BYTES]
-        return binascii.hexlify(signature).decode('ascii')
+        to_sign = content.encode('utf-8') + bytes(datetime.utcnow().strftime('%Y%m%d:%H%M'), 'ascii')
+        signature = binascii.hexlify(crypto_sign(to_sign, self.private_key)[:crypto_sign_BYTES])
+        return signature
     
     async def create_invoice(self, user_id: int, package_id: str, external_id: str) -> Optional[Dict[str, Any]]:
         """Создает инвойс для оплаты пакета."""
@@ -77,21 +76,21 @@ class StreamPayAPI:
         
         package = PAYMENT_PACKAGES[package_id]
         
-        req_data = {
+        req_data = json.dumps({
             "store_id": self.store_id,
             "customer": str(user_id),
             "external_id": external_id,
             "description": f"Покупка пакета обработки фото - {package['name']['ru']}",
             "system_currency": "USDT",
-            "payment_type": 2,  # Валюта клиента
+            "payment_type": 1,
+            'currency': "RUB", # Рубли
             "amount": package['price'],
             "success_url": f"{config.BASE_URL}/payment/success",
             "fail_url": f"{config.BASE_URL}/payment/fail",
             "cancel_url": f"{config.BASE_URL}/payment/cancel",
-        }
+        })
         
-        req_content = json.dumps(req_data)
-        signature = self._generate_signature(req_content)
+        signature = self._generate_signature(req_data)
         
         headers = {
             'Content-Type': 'application/json',
@@ -102,7 +101,7 @@ class StreamPayAPI:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f'{self.api_base_url}/api/payment/create',
-                    content=req_content,
+                    content=req_data,
                     headers=headers
                 )
                 
@@ -144,7 +143,6 @@ class StreamPayAPI:
 
 # Глобальный экземпляр API
 streampay_api = None
-
 # Инициализируем API только если все настройки доступны
 if config.STREAMPAY_ENABLED:
     try:
@@ -161,7 +159,7 @@ async def create_payment_order(user_id: int, package_id: str) -> Optional[Dict[s
     if not streampay_api:
         logger.error("StreamPay API not available - cannot create payment order")
         return None
-        
+
     external_id = f"order_{user_id}_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
     
     # Создаем инвойс через API

@@ -7,8 +7,8 @@ packages:
       en: "Perfect for trying out the service"
       ru: "Идеально для знакомства с сервисом"
     photos: 5
-    price: 2.99
-    currency: "USD"
+    price: 300
+    currency: "RUB"
     popular: false
     
   basic:
@@ -19,8 +19,8 @@ packages:
       en: "Great value for regular use"
       ru: "Отличное соотношение цены и качества"
     photos: 15
-    price: 7.99
-    currency: "USD"
+    price: 719
+    currency: "RUB"
     popular: true
     
   premium:
@@ -31,8 +31,8 @@ packages:
       en: "Best deal for power users"
       ru: "Лучшее предложение для активных пользователей"
     photos: 50
-    price: 19.99
-    currency: "USD"
+    price: 1799
+    currency: "RUB"
     popular: false
     
   ultimate:
@@ -43,6 +43,6 @@ packages:
       en: "Unlimited processing for a month"
       ru: "Безлимитная обработка на месяц"
     photos: 200
-    price: 49.99
-    currency: "USD"
+    price: 4499
+    currency: "RUB"
     popular: false 

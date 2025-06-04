@@ -111,7 +111,7 @@ def get_payment_packages_keyboard(lang: str) -> InlineKeyboardMarkup:
             # Формируем текст кнопки
             popular_mark = "🔥 " if package_info.get('popular') else ""
             button_text = f"{popular_mark}{package_info['name']}"
-            button_text += f"\n{package_info['photos']} фото - ${package_info['price']}"
+            button_text += f"\n{package_info['photos']} фото - {package_info['price']} ₽"
             
             keyboard.append([InlineKeyboardButton(
                 button_text, 

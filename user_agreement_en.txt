@@ -2,10 +2,11 @@
 
 Please read these terms carefully before using the bot.
 
-1. Purpose: This bot uses the Clothoff API for image processing demonstrations.
-2. Responsible Use: You agree to use the bot ethically and responsibly. Do not process images without consent or for malicious purposes.
-3. Data: Processed images are handled according to Clothoff's policies. Your user ID and settings are stored for bot functionality.
-4. Disclaimer: Results depend on the API and may not always be accurate or appropriate. Use at your own risk.
-5. Changes: These terms may be updated. Continued use implies acceptance of changes.
+1. **Age Restriction and Consent**: You confirm that all individuals depicted in the photos you submit for processing are strictly over 18 years of age. You also confirm that you have obtained explicit consent from each individual depicted in the photos for their image to be processed by this service.
+2. Purpose: This bot uses an API for image processing demonstrations.
+3. Responsible Use: You agree to use the bot ethically and responsibly. Do not process images for malicious purposes or in violation of points 1 and 2.
+4. Data: Submitted images are processed according to the policies of the processing service used. Your user ID and settings are stored for bot functionality.
+5. Disclaimer: Results depend on the API and may not always be accurate or appropriate. Use at your own risk.
+6. Changes: These terms may be updated. Continued use implies acceptance of changes.
 
-By clicking "Accept", you confirm you have read, understood, and agree to these terms.
+By clicking "Accept", you confirm you have read, understood, and agree to these terms, including the age and consent confirmations.

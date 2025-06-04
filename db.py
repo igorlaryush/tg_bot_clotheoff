@@ -57,7 +57,7 @@ async def get_or_create_user(user_id: int, chat_id: int, username: str = None, f
                 update_data["username"] = username
             if first_name and first_name != current_data.get("first_name"):
                 update_data["first_name"] = first_name
-            if chat_id != current_data.get("chat_id"):
+            if chat_id and chat_id != current_data.get("chat_id"):
                 update_data["chat_id"] = chat_id
 
             # Ensure essential fields exist if missing from older documents
@@ -300,4 +300,26 @@ async def get_user_payment_history(user_id: int, limit: int = 10) -> list:
         return orders
     except Exception as e:
         logger.error(f"Failed to get payment history for user {user_id}: {e}")
+        return []
+
+async def get_all_users() -> list[Dict[str, Any]]:
+    """Fetches all users from the 'users' collection in Firestore."""
+    if not db:
+        logger.error("Firestore client is not initialized.")
+        return []
+
+    users_list = []
+    try:
+        users_ref = db.collection("users")
+        async for doc in users_ref.stream():
+            user_data = doc.to_dict()
+            # Ensure essential fields are present, especially chat_id
+            if "chat_id" in user_data and "user_id" in user_data:
+                users_list.append(user_data)
+            else:
+                logger.warning(f"User document {doc.id} is missing chat_id or user_id, skipping.")
+        logger.info(f"Fetched {len(users_list)} users from Firestore.")
+        return users_list
+    except Exception as e:
+        logger.exception(f"Error fetching all users from Firestore: {e}")
         return []

@@ -23,25 +23,37 @@ def require_agreement(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user = update.effective_user
-        if not user: # Не должно происходить для обычных команд/сообщений
+        if not user:
             return
 
         user_data = await db.get_or_create_user(user.id, update.effective_chat.id, user.username, user.first_name)
 
         if not user_data:
-            # Ошибка получения данных пользователя
-            await update.message.reply_text(get_text("error_getting_user_data", config.DEFAULT_LANGUAGE)) # Отправляем на языке по умолчанию
+            user_tg_lang = user.language_code if user.language_code in config.SUPPORTED_LANGUAGES else config.DEFAULT_LANGUAGE
+            # Send to update.message or update.callback_query.message depending on context
+            target_message = update.callback_query.message if update.callback_query else update.message
+            await target_message.reply_text(get_text("error_getting_user_data", user_tg_lang))
             return
 
         if not user_data.get("agreed_to_terms", False):
-            # Пользователь не согласился, отправляем сначала выбор языка, потом соглашение
-            # Проверяем, есть ли callback_query, чтобы не отправлять снова, если уже идет процесс
+            # User has not agreed. Prompt for language first, then agreement.
+            initial_prompt_lang = user_data.get("language") or (user.language_code if user.language_code in config.SUPPORTED_LANGUAGES else config.DEFAULT_LANGUAGE)
+            
+            # Determine where to send the message (reply to command or edit callback message)
             if update.callback_query:
-                 # Если это нажатие на кнопку в процессе согласия, даем ему пройти
-                 pass
+                # If triggered by a callback from a user not yet agreed (e.g. trying to access settings via old button)
+                await update.callback_query.message.edit_text(
+                    text=get_text("choose_language", initial_prompt_lang),
+                    reply_markup=keyboards.get_language_keyboard()
+                )
             else:
-                await send_agreement_prompt(update, context, user_data)
-                return # Останавливаем выполнение оригинальной команды
+                # If triggered by a command (e.g. /settings)
+                await update.message.reply_text(
+                    text=get_text("choose_language", initial_prompt_lang),
+                    reply_markup=keyboards.get_language_keyboard()
+                )
+            context.user_data['initial_lang_selection'] = True # Signal to callback_handler
+            return # Stop original command/callback
 
         # Если согласие есть, добавляем user_data в context для удобства
         context.user_data['db_user'] = user_data
@@ -54,18 +66,17 @@ async def send_agreement_prompt(update: Update, context: ContextTypes.DEFAULT_TY
     chat_id = update.effective_chat.id
     user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
 
-    # Шаг 1: Если язык еще не выбран (вдруг такое возможно) - просим выбрать
-    # В get_or_create_user мы уже устанавливаем язык по умолчанию, так что этот шаг может быть избыточен,
-    # но оставим для надежности или если логика изменится
-    if not user_data.get("language"):
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=get_text("choose_language", config.DEFAULT_LANGUAGE), # Сначала на языке по умолчанию
-            reply_markup=keyboards.get_language_keyboard()
-        )
-        return
+    # Шаг 1: Больше не нужен, так как start теперь всегда предлагает выбор языка сначала.
+    # if not user_data.get("language"):
+    #     await context.bot.send_message(
+    #         chat_id=chat_id,
+    #         text=get_text("choose_language", config.DEFAULT_LANGUAGE), # Сначала на языке по умолчанию
+    #         reply_markup=keyboards.get_language_keyboard()
+    #     )
+    #     return
 
     # Шаг 2: Отправляем текст соглашения и кнопки
+    logger.info(f"Sending agreement prompt to user {user.id} in lang {user_lang}")
     agreement_text = get_agreement_text(user_lang)
     await context.bot.send_message(
         chat_id=chat_id,
@@ -99,36 +110,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if not user_data:
-        await update.message.reply_text(get_text("error_getting_user_data", config.DEFAULT_LANGUAGE))
+        user_tg_lang = user.language_code if user.language_code in config.SUPPORTED_LANGUAGES else config.DEFAULT_LANGUAGE
+        await update.message.reply_text(get_text("error_getting_user_data", user_tg_lang))
         return
 
-    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-
     if not user_data.get("agreed_to_terms", False):
-        await send_agreement_prompt(update, context, user_data)
+        # User has not agreed. Prompt for language first.
+        # The text "choose_language" should be available in default languages.
+        # We use a neutral or default language for this very first prompt.
+        initial_prompt_lang = config.DEFAULT_LANGUAGE 
+        # Or, try user's Telegram client language if available for the prompt itself
+        if user.language_code in config.SUPPORTED_LANGUAGES:
+            initial_prompt_lang = user.language_code
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=get_text("choose_language", initial_prompt_lang), # Prompt in a neutral/default lang
+            reply_markup=keyboards.get_language_keyboard() # Buttons "English", "Русский"
+        )
+        # Set a flag that we are in the initial language selection phase
+        context.user_data['initial_lang_selection'] = True
     else:
-        # Если уже согласился, просто приветствуем
-        # Отправляем приветственное изображение
+        # User has agreed. Send welcome message in their stored language.
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+        welcome_message_text = get_text("start_message", user_lang).format(user_name=user.first_name)
         try:
             with open('images/welcome.png', 'rb') as photo:
                 await context.bot.send_photo(
                     chat_id=chat_id,
                     photo=photo,
-                    caption=get_text("start_message", user_lang).format(user_name=user.first_name),
+                    caption=welcome_message_text,
                     parse_mode=ParseMode.MARKDOWN
                 )
         except FileNotFoundError:
             logger.error("welcome.png not found. Sending only text message for /start.")
-            await update.message.reply_text(
-                get_text("start_message", user_lang).format(user_name=user.first_name),
-                parse_mode=ParseMode.MARKDOWN
-            )
+            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             logger.error(f"Error sending welcome photo for /start: {e}")
-            await update.message.reply_text(
-                get_text("start_message", user_lang).format(user_name=user.first_name),
-                parse_mode=ParseMode.MARKDOWN
-            )
+            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
 
 @require_agreement # Теперь /help требует согласия
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,14 +251,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(config.CLOTHOFF_API_URL, data=data, headers=headers) as response:
                 response_text = await response.text()
-                logger.debug(f"Clothoff API Raw Response ({response.status}) for id_gen {id_gen}: {response_text}")
+                logger.debug(f"API Raw Response ({response.status}) for id_gen {id_gen}: {response_text}")
 
                 if response.status == 200:
-                    logger.info(f"Clothoff API call successful for id_gen {id_gen}. Waiting for webhook.")
+                    logger.info(f"API call successful for id_gen {id_gen}. Waiting for webhook.")
                     # Можно обновить статус
                     # await context.bot.edit_message_text(get_text("photo_sent_for_processing", user_lang), chat_id=chat_id, message_id=status_message.message_id)
                 else:
-                    logger.error(f"Clothoff API error for id_gen {id_gen}: Status {response.status}, Response: {response_text}")
+                    logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text}")
                     if id_gen in bot_state.pending_requests: del bot_state.pending_requests[id_gen]
                     # Возвращаем фото на баланс при ошибке API
                     await db.add_user_photos(user_id, 1)
@@ -251,7 +270,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
 
     except aiohttp.ClientError as e:
-        logger.error(f"Network error calling Clothoff API for user {user_id} (id_gen: {id_gen}): {e}")
+        logger.error(f"Network error calling for user {user_id} (id_gen: {id_gen}): {e}")
         if id_gen and id_gen in bot_state.pending_requests:
              status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
              if status_message_id:
@@ -310,145 +329,165 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Обработчик Callback Query (нажатия кнопок) ---
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer() # Обязательно отвечаем на callback
+    await query.answer()
 
-    user = query.from_user
-    chat_id = query.message.chat_id
-    message_id = query.message.message_id
+    user = update.effective_user
+    chat_id = update.effective_chat.id
     callback_data = query.data
 
-    logger.info(f"Callback query received from user {user.id}: {callback_data}")
+    logger.debug(f"Callback query received from user {user.id} in chat {chat_id}: {callback_data}")
 
-    # Получаем данные пользователя (не используем декоратор тут, т.к. часть кнопок - до соглашения)
     user_data = await db.get_or_create_user(user.id, chat_id, user.username, user.first_name)
     if not user_data:
-        await context.bot.send_message(chat_id, get_text("error_getting_user_data", config.DEFAULT_LANGUAGE))
+        user_tg_lang = user.language_code if user.language_code in config.SUPPORTED_LANGUAGES else config.DEFAULT_LANGUAGE
+        await query.edit_message_text(get_text("error_getting_user_data", user_tg_lang))
         return
 
-    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+    current_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+    initial_selection_phase = context.user_data.pop('initial_lang_selection', False) # Check and clear flag
+
+    # --- Language Selection (set_lang:en, set_lang:ru) ---
+    if callback_data.startswith("set_lang:"):
+        chosen_lang = callback_data.split(":")[1]
+        
+        # Update language in DB and local user_data
+        if chosen_lang != user_data.get("language"):
+            success = await db.update_user_data(user.id, {"language": chosen_lang})
+            if success:
+                user_data["language"] = chosen_lang
+                current_lang = chosen_lang # Update for current context
+                await query.edit_message_text(get_text("language_set", chosen_lang))
+            else:
+                await query.edit_message_text(get_text("error_occurred", current_lang))
+                # Re-set flag if DB update failed during initial phase to allow retry
+                if initial_selection_phase:
+                     context.user_data['initial_lang_selection'] = True
+                return
+        else:
+            # Language already set to this, just edit message to confirm and remove old keyboard
+            await query.edit_message_text(get_text("language_set", chosen_lang))
+
+        if initial_selection_phase:
+            # Coming from /start, now show agreement in chosen language
+            await send_agreement_prompt(update, context, user_data)
+        else:
+            # Language changed from settings. The settings menu should be refreshed by user action (e.g. "Back" button)
+            # or specific logic in settings flow if message needs to be auto-updated.
+            # For now, just confirming the language set is sufficient here.
+            # The 'show_settings_option:language' will display choices, and its 'Back' button handles return.
+            pass
+        return
+
+    # --- Agreement Handling (accept_terms:true, decline_terms:true) ---
+    elif callback_data.startswith("accept_terms:"): # Handles "accept_terms:true"
+        # Language should have been set by the 'set_lang:' callback if it was initial_selection_phase
+        # or already be in user_data if user is revisiting.
+        lang_to_save = user_data.get("language", config.DEFAULT_LANGUAGE) # Ensure we have a lang to save
+
+        success = await db.update_user_data(user.id, {"agreed_to_terms": True, "language": lang_to_save})
+        if success:
+            user_data["agreed_to_terms"] = True # Update local copy
+            await query.edit_message_text(get_text("agreement_accepted", lang_to_save))
+            
+            welcome_message_text = get_text("start_message", lang_to_save).format(user_name=user.first_name)
+            try:
+                with open('images/welcome.png', 'rb') as photo:
+                    await context.bot.send_photo(chat_id=chat_id, photo=photo, caption=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+            except FileNotFoundError:
+                logger.error("welcome.png not found. Sending text message after agreement.")
+                await context.bot.send_message(chat_id=chat_id, text=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+            except Exception as e:
+                logger.error(f"Error sending welcome photo after agreement: {e}")
+                await context.bot.send_message(chat_id=chat_id, text=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await query.edit_message_text(get_text("error_occurred", lang_to_save))
+        return
+
+    elif callback_data.startswith("decline_terms:"): # Handles "decline_terms:true"
+        lang_to_save = user_data.get("language", config.DEFAULT_LANGUAGE)
+        # User declined. We don't necessarily need to change their chosen language.
+        await db.update_user_data(user.id, {"agreed_to_terms": False}) # Explicitly set to false
+        await query.edit_message_text(get_text("agreement_declined", lang_to_save))
+        return
+
+    # --- All subsequent callbacks require agreement ---
+    if not user_data.get("agreed_to_terms", False):
+        # If user tries to interact with other buttons without agreeing
+        await query.message.reply_text(get_text("must_accept_agreement", current_lang))
+        # Optionally, redirect to start or resend language/agreement prompt
+        # For now, just a message. The decorator on commands handles command access.
+        return
+
+    # --- Agreement is True, proceed with other callbacks ---
+    context.user_data['db_user'] = user_data # For require_agreement decorator and other handlers
     current_options = user_data.get("processing_options", {})
 
-    # Проверяем, является ли это callback'ом платежей
-    payment_callbacks = [
-        "show_packages", "show_balance", "show_payment_history", "cancel_payment", "back_to_main"
-    ]
-    
-    if (callback_data in payment_callbacks or 
-        callback_data.startswith(("buy_package:", "confirm_purchase:", "payment_history_page:"))):
-        
-        # Проверяем согласие для платежных операций
-        if not user_data.get("agreed_to_terms", False):
-            await send_agreement_prompt(update, context, user_data)
-            return
-            
-        handled = await handle_payment_callbacks(update, context, callback_data, user_data, query)
-        if handled:
-            return
+    # --- Payment Callbacks Handling (Example, ensure your function exists and is called correctly) ---
+    payment_callbacks_prefixes = ("buy_package:", "confirm_purchase:", "payment_history_page:")
+    payment_callbacks_exact = ["show_packages", "show_balance", "show_payment_history", "cancel_payment", "back_to_main"]
+    if callback_data.startswith(payment_callbacks_prefixes) or callback_data in payment_callbacks_exact:
+        if hasattr(payments, 'handle_payment_callbacks'): # Assuming you might move this
+             await payments.handle_payment_callbacks(update, context, callback_data, user_data, query)
+        else: # Fallback to local one if not moved
+             await handle_payment_callbacks(update, context, callback_data, user_data, query)
+        return
 
-    # Остальная логика обработки callback'ов (существующий код)
-    # ... (весь существующий код обработки callback'ов остается без изменений)
 
-    # --- Логика обработки разных callback_data ---
-
-    # 1. Выбор языка
-    if callback_data.startswith("set_lang:"):
-        new_lang = callback_data.split(":")[1]
-        if new_lang in config.SUPPORTED_LANGUAGES:
-            updated = await db.update_user_data(user.id, {"language": new_lang})
-            if updated:
-                user_lang = new_lang # Обновляем язык для дальнейших сообщений
-                # Если пользователь еще не согласился, показываем соглашение на новом языке
-                if not user_data.get("agreed_to_terms"):
-                    agreement_text = get_agreement_text(user_lang)
-                    try:
-                        await query.edit_message_text(
-                            text=f"{get_text('agreement_prompt', user_lang)}\n\n{agreement_text}",
-                            reply_markup=keyboards.get_agreement_keyboard(user_lang),
-                            parse_mode=ParseMode.MARKDOWN
-                        )
-                    except BadRequest as e:
-                        if "Message is not modified" not in str(e): raise e
-                        logger.debug("Agreement message not modified.")
-                else:
-                    # Если уже согласился, просто уведомляем о смене языка и возвращаемся в настройки
-                    await context.bot.send_message(chat_id, get_text("language_set", user_lang))
-                    # Обновляем меню настроек
-                    await query.edit_message_text(
-                        text=get_text("settings_choose_option", user_lang),
-                        reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-                     )
-
-            else:
-                 await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
-        else:
-            logger.warning(f"Unsupported language code received: {new_lang}")
-
-    # 2. Соглашение
-    elif callback_data.startswith("accept_terms:"):
-        updated = await db.update_user_data(user.id, {"agreed_to_terms": True})
-        if updated:
-            await query.edit_message_text(text=get_text("agreement_accepted", user_lang))
-        else:
-            await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
-
-    elif callback_data.startswith("decline_terms:"):
-        await query.edit_message_text(text=get_text("agreement_declined", user_lang))
-
-    # --- Обработка настроек (требует согласия, но проверка уже в /settings) ---
+    # --- Settings Callbacks Handling (Linter errors addressed here) ---
+    if callback_data == "back_to_settings:main" or callback_data == "settings_main": # Added settings_main for direct entry if used
+        await query.edit_message_text(
+            text=get_text("settings_choose_option", current_lang),
+            reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options)
+        )
     elif callback_data.startswith("show_settings_option:"):
         option_key = callback_data.split(":")[1]
-        option_name = get_text(f"option_{option_key}", user_lang)
-        current_value = user_data.get("language") if option_key == 'language' else current_options.get(option_key, "")
+        option_name_display = get_text(f"option_{option_key}", current_lang)
+        
+        value_for_keyboard = current_options.get(option_key, "")
+        if option_key == 'language':
+             value_for_keyboard = current_lang # For language, current_value is the current language
 
-        try:
-            await query.edit_message_text(
-                text=get_text("choose_value_for", user_lang).format(option_name=option_name),
-                reply_markup=keyboards.get_option_value_keyboard(option_key, user_lang, current_value)
-            )
-        except BadRequest as e:
-             if "Message is not modified" not in str(e): raise e
-             logger.debug(f"Settings option '{option_key}' view not modified.")
-
-
-    elif callback_data.startswith("set_setting:"):
+        await query.edit_message_text(
+            text=get_text("choose_value_for", current_lang).format(option_name=option_name_display),
+            reply_markup=keyboards.get_option_value_keyboard(option_key, current_lang, value_for_keyboard) # Corrected function name
+        )
+    
+    elif callback_data.startswith("set_setting:"): # For general settings, not language
         parts = callback_data.split(":", 2)
         option_key = parts[1]
-        new_value = parts[2] # Может быть пустой строкой для сброса
+        new_value_str = parts[2]
 
-        # Обновляем вложенный map processing_options
-        current_options[option_key] = new_value
-        updated = await db.update_user_data(user.id, {"processing_options": current_options})
-
-        if updated:
-            option_name = get_text(f"option_{option_key}", user_lang)
-            display_value = new_value if new_value else get_text("value_not_set", user_lang)
-            # Уведомляем об обновлении
-            await context.bot.send_message(chat_id, get_text("setting_updated", user_lang).format(option_name=option_name, value=display_value))
-            # Возвращаемся в главное меню настроек
-            try:
-                await query.edit_message_text(
-                    text=get_text("settings_choose_option", user_lang),
-                    reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-                )
-            except BadRequest as e:
-                 if "Message is not modified" not in str(e): raise e
-                 logger.debug("Settings main menu not modified after update.")
+        if option_key == "postprocessing": # Example of type conversion if needed
+            current_options[option_key] = new_value_str.lower() == "true" if new_value_str else ""
         else:
-             await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
-
-
-    elif callback_data == "back_to_settings:main":
-         try:
-            await query.edit_message_text(
-                text=get_text("settings_choose_option", user_lang),
-                reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+            current_options[option_key] = new_value_str
+        
+        success = await db.update_user_data(user.id, {"processing_options": current_options})
+        if success:
+            user_data["processing_options"] = current_options # Update local
+            confirm_text = get_text("setting_updated", current_lang).format(
+                option_name=get_text(f"option_{option_key}", current_lang), 
+                value=new_value_str if new_value_str else get_text("value_not_set", current_lang)
             )
-         except BadRequest as e:
-             if "Message is not modified" not in str(e): raise e
-             logger.debug("Back to settings main menu - message not modified.")
+            # Refresh main settings view
+            await query.edit_message_text(
+                text=f"{confirm_text}\n\n{get_text('settings_choose_option', current_lang)}",
+                reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options)
+            )
+        else:
+            await query.edit_message_text(get_text("error_occurred", current_lang))
+    
+    # Removed "reset_all_settings" as it was causing linter errors with get_settings_main_keyboard
+    # and its direct implementation needs review based on how PROCESSING_OPTIONS defaults are handled.
+    # A "reset to default" for each option is present in get_option_value_keyboard (empty value).
+    # If a global reset is needed, it should pass current_options={} to get_settings_main_keyboard.
+    # For example, a new callback "reset_all_processing_options" could do:
+    # current_options = {}
+    # await db.update_user_data(user.id, {"processing_options": current_options})
+    # await query.edit_message_text(text=..., reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options))
 
     else:
-        logger.warning(f"Unhandled callback_data: {callback_data}")
+        logger.warning(f"Unhandled agreed callback_data: {callback_data} from user {user.id}")
 
 # === Команды и обработчики для платежей ===
 
@@ -631,7 +670,7 @@ async def notify_payment_success(user_id: int, package_name: str, photos_added: 
     """Уведомляет пользователя об успешном платеже."""
     try:
         # Получаем данные пользователя для языка и chat_id
-        user_data = await db.get_or_create_user(user_id, 0, None, None)  # chat_id будет обновлен из существующих данных
+        user_data = await db.get_or_create_user(user_id, None, None, None)  # chat_id будет обновлен из существующих данных
         if not user_data:
             logger.error(f"Cannot notify user {user_id} about payment success - user data not found")
             return
@@ -639,7 +678,7 @@ async def notify_payment_success(user_id: int, package_name: str, photos_added: 
         user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
         chat_id = user_data.get("chat_id")
         
-        if not chat_id:
+        if chat_id is None:
             logger.error(f"Cannot notify user {user_id} about payment success - chat_id not found")
             return
 

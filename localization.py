@@ -112,23 +112,23 @@ TEXTS = {
 
     # --- Старт и Помощь ---
     "start_message": {
-        "en": "Hello {user_name}! Send me a photo containing a person, and I'll try to process it using Clothoff.io.\n\nUse /settings to change language or processing options.\n\n⚠️ **Disclaimer:** Use this bot responsibly and ethically.",
-        "ru": "Привет, {user_name}! Отправь мне фото с человеком, и я попробую обработать его с помощью Clothoff.io.\n\nИспользуйте /settings для смены языка или опций обработки.\n\n⚠️ **Отказ от ответственности:** Используйте этого бота ответственно и этично.",
+        "en": "Hello {user_name}! Send me a photo containing a person, and I'll try to process it using API.\n\nUse /settings to change language or processing options.\n\n⚠️ **Disclaimer:** Use this bot responsibly and ethically.",
+        "ru": "Привет, {user_name}! Отправь мне фото с человеком, и я попробую обработать его с помощью API.\n\nИспользуйте /settings для смены языка или опций обработки.\n\n⚠️ **Отказ от ответственности:** Используйте этого бота ответственно и этично.",
     },
     "help_message": {
-        "en": "Send me a photo with a person in it. I will send it to the Clothoff API for processing based on your /settings.\n"
+        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your /settings.\n"
               "You will receive the result back here once it's ready.\n\n"
               "**Important:**\n"
               "- Ensure the image clearly shows one person.\n"
               "- Processing can take some time.\n"
-              "- Results depend on the Clothoff API's capabilities.\n"
+              "- Results depend on the API's capabilities.\n"
               "- Use responsibly.",
-        "ru": "Отправьте мне фото с человеком. Я отправлю его в Clothoff API для обработки согласно вашим /settings.\n"
+        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим /settings.\n"
               "Вы получите результат здесь, когда он будет готов.\n\n"
               "**Важно:**\n"
               "- Убедитесь, что на изображении четко виден один человек.\n"
               "- Обработка может занять некоторое время.\n"
-              "- Результаты зависят от возможностей Clothoff API.\n"
+              "- Результаты зависят от возможностей API.\n"
               "- Используйте ответственно.",
     },
 
@@ -232,8 +232,8 @@ TEXTS = {
         "ru": "Выберите пакет для покупки:",
     },
     "package_details": {
-        "en": "📦 **{name}**\n\n{description}\n\n💎 Photos: {photos}\n💰 Price: ${price}\n\nConfirm your purchase?",
-        "ru": "📦 **{name}**\n\n{description}\n\n💎 Фото: {photos}\n💰 Цена: ${price}\n\nПодтвердить покупку?",
+        "en": "📦 **{name}**\n\n{description}\n\n💎 Photos: {photos}\n💰 Price: {price} ₽\n\nConfirm your purchase?",
+        "ru": "📦 **{name}**\n\n{description}\n\n💎 Фото: {photos}\n💰 Цена: {price} ₽\n\nПодтвердить покупку?",
     },
     "confirm_purchase": {
         "en": "✅ Confirm Purchase",
@@ -252,8 +252,8 @@ TEXTS = {
         "ru": "⏳ Создаю ссылку для оплаты...",
     },
     "payment_link_created": {
-        "en": "💳 **Payment Link Created**\n\nPackage: {package_name}\nAmount: ${amount}\n\nClick the button below to proceed with payment:",
-        "ru": "💳 **Ссылка для оплаты создана**\n\nПакет: {package_name}\nСумма: ${amount}\n\nНажмите кнопку ниже для оплаты:",
+        "en": "💳 **Payment Link Created**\n\nPackage: {package_name}\nAmount: {amount} ₽\n\nClick the button below to proceed with payment:",
+        "ru": "💳 **Ссылка для оплаты создана**\n\nПакет: {package_name}\nСумма: {amount} ₽\n\nНажмите кнопку ниже для оплаты:",
     },
     "pay_now": {
         "en": "💳 Pay Now",
@@ -280,8 +280,8 @@ TEXTS = {
         "ru": "📋 История платежей пуста.",
     },
     "payment_history_item": {
-        "en": "📦 {package_name}\n💰 ${amount} • {status}\n📅 {date}",
-        "ru": "📦 {package_name}\n💰 ${amount} • {status}\n📅 {date}",
+        "en": "📦 {package_name}\n💰 {amount} ₽ • {status}\n📅 {date}",
+        "ru": "📦 {package_name}\n💰 {amount} ₽ • {status}\n📅 {date}",
     },
     "payment_status_pending": {
         "en": "⏳ Pending",
@@ -306,6 +306,10 @@ TEXTS = {
     "show_balance": {
         "en": "💰 Balance",
         "ru": "💰 Баланс",
+    },
+    "scheduled_notification_promo": {
+        "en": "Want something more? The time has come 🥵\n\nCreate neurophotos with her face ACCORDING TO YOUR REQUEST, any desire of your imagination will be brought to life in just a few seconds\n\n1. Describe what should be in the photo using /settings.\n2. Send a high-quality photo of a person.\n3. Enjoy the results!",
+        "ru": "Хочешь чего-то большего ? Время пришло 🥵\n\nСоздавай нейрофото с её лицом по СВОЕМУ ЗАПРОСУ, любое желания твоей фантазии будет воплощено в жизнь всего за не сколько секунд\n\n1. Опиши что должно быть на фото /settings. \n2. Отправь фото человека, в хорошем качестве.\n3. Наслаждайся результатами!",
     }
 }
 

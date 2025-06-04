@@ -147,7 +147,7 @@ async def process_notifications_queue(app: Application):
             chat_id = notification.get("chat_id")
             text = notification.get("text")
 
-            if not all([notification_type, user_id, chat_id, text]):
+            if not all(x is not None for x in [notification_type, user_id, chat_id, text]):
                 logger.warning("Received incomplete notification from queue.")
                 bot_state.notifications_queue.task_done()
                 continue
