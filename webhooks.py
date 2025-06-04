@@ -136,9 +136,9 @@ def setup_routes(ptb_app: Application):
             query_params = dict(request.args)
             signature = request.headers.get('Signature')
             
-            # if not signature:
-            #     logger.error("StreamPay callback: Missing Signature header")
-            #     return jsonify({"error": "Missing signature"}), 400
+            if not signature:
+                logger.error("StreamPay callback: Missing Signature header")
+                return jsonify({"error": "Missing signature"}), 400
 
             # Формируем строку для проверки подписи
             sorted_params = sorted(query_params.items())
@@ -146,10 +146,10 @@ def setup_routes(ptb_app: Application):
             
             logger.info(f"StreamPay callback received: {query_string}")
             
-            # # Проверяем подпись
-            # if not payments.streampay_api.verify_callback_signature(query_string, signature):
-            #     logger.error(f"StreamPay callback: Invalid signature for params: {query_string}")
-            #     return jsonify({"error": "Invalid signature"}), 403
+            # Проверяем подпись
+            if not payments.streampay_api.verify_callback_signature(query_string, signature):
+                logger.error(f"StreamPay callback: Invalid signature for params: {query_string}")
+                return jsonify({"error": "Invalid signature"}), 403
 
             # Обрабатываем callback
             success = await payments.process_payment_callback(query_params)
