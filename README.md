@@ -12,3 +12,4 @@ gcloud builds submit . `
 
 Ссылка на callback curl "<tuna adress>/payment/callback?status=success&external_id=test_order_for_tuna_001"
 
+Callback для уведомлений: <tuna adress>/scheduler/send_notifications
