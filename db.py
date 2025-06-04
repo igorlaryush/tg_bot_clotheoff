@@ -38,7 +38,7 @@ async def init_db():
     return db
 
 
-async def get_or_create_user(user_id: int, chat_id: int, username: str = None, first_name: str = None) -> dict | None:
+async def get_or_create_user(user_id: int, chat_id: int, username: str = None, first_name: str = None, source: str = None) -> dict | None:
     """Gets or creates a user in Firestore, including language and agreement status."""
     if not db:
         logger.error("Firestore client is not initialized.")
@@ -91,9 +91,10 @@ async def get_or_create_user(user_id: int, chat_id: int, username: str = None, f
                 "language": config.DEFAULT_LANGUAGE, # Set default language
                 "agreed_to_terms": False,           # Not agreed yet
                 "processing_options": {},           # Default empty options
+                "source": source if source else "organic", # Add source, default to "organic"
             }
             await user_doc_ref.set(user_data)
-            logger.info("New user %s created in Firestore with defaults.", user_id)
+            logger.info("New user %s created in Firestore with source: %s.", user_id, user_data["source"])
             return user_data
     except Exception as e:
         logger.exception("Error accessing Firestore for user %s: %s", user_id, e)
@@ -303,23 +304,44 @@ async def get_user_payment_history(user_id: int, limit: int = 10) -> list:
         return []
 
 async def get_all_users() -> list[Dict[str, Any]]:
-    """Fetches all users from the 'users' collection in Firestore."""
+    """Retrieves all users from Firestore."""
     if not db:
         logger.error("Firestore client is not initialized.")
         return []
-
+    
     users_list = []
     try:
-        users_ref = db.collection("users")
-        async for doc in users_ref.stream():
-            user_data = doc.to_dict()
-            # Ensure essential fields are present, especially chat_id
-            if "chat_id" in user_data and "user_id" in user_data:
-                users_list.append(user_data)
-            else:
-                logger.warning(f"User document {doc.id} is missing chat_id or user_id, skipping.")
-        logger.info(f"Fetched {len(users_list)} users from Firestore.")
-        return users_list
+        users_collection = db.collection("users")
+        async for doc in users_collection.stream():
+            users_list.append(doc.to_dict())
+        logger.info(f"Retrieved {len(users_list)} users from Firestore.")
     except Exception as e:
-        logger.exception(f"Error fetching all users from Firestore: {e}")
-        return []
+        logger.exception("Error retrieving all users from Firestore: %s", e)
+    return users_list
+
+# === Функции для логирования событий пользователя ===
+
+async def log_user_event(user_id: int, event_type: str, event_details: Optional[Dict[str, Any]] = None) -> bool:
+    """Logs a user event to Firestore."""
+    if not db:
+        logger.error("Firestore client is not initialized. Cannot log event.")
+        return False
+
+    try:
+        event_data = {
+            "user_id": user_id,
+            "event_type": event_type,
+            "timestamp": SERVER_TIMESTAMP,
+            "event_details": event_details if event_details else {}
+        }
+        # Генерируем уникальный ID для события, чтобы избежать перезаписи
+        # и иметь возможность ссылаться на конкретное событие.
+        # Firestore автоматически генерирует ID, если не указать document(),
+        # но мы можем создать его и здесь для большей наглядности или если он нужен заранее.
+        # В данном случае, позволим Firestore генерировать ID автоматически.
+        event_doc_ref = await db.collection("user_events").add(event_data)
+        logger.info(f"Logged event '{event_type}' for user {user_id}. Event ID: {event_doc_ref[1].id}")
+        return True
+    except Exception as e:
+        logger.exception(f"Failed to log event '{event_type}' for user {user_id}: {e}")
+        return False

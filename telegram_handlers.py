@@ -100,13 +100,24 @@ async def setup_bot_commands(context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
-    logger.info(f"Received /start from user_id: {user.id} in chat_id: {chat_id}")
+    
+    # --- Извлечение параметра start ---
+    source_param = None
+    if context.args:
+        source_param = context.args[0]
+        logger.info(f"Received /start from user_id: {user.id} in chat_id: {chat_id} with source_param: {source_param}")
+    else:
+        logger.info(f"Received /start from user_id: {user.id} in chat_id: {chat_id} (no source_param)")
+    
+    user_source = source_param if source_param else "organic"
+    # --- Конец извлечения параметра start ---
 
     user_data = await db.get_or_create_user(
         user_id=user.id,
         chat_id=chat_id,
         username=user.username,
-        first_name=user.first_name
+        first_name=user.first_name,
+        source=user_source # <--- Передаем источник
     )
 
     if not user_data:
@@ -211,6 +222,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
             reply_to_message_id=message_id
         )
+        # Логируем попытку генерации при недостаточном балансе
+        await db.log_user_event(user_id, "generation_attempt_insufficient_balance", {"current_balance": current_balance})
         return
 
     photo_file = None
@@ -240,6 +253,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_state.pending_requests[id_gen] = {"chat_id": chat_id, "user_id": user_id, "message_id": message_id, "lang": user_lang} # Сохраняем язык
         logger.info(f"Generated id_gen: {id_gen} for user {user_id}. Pending requests: {len(bot_state.pending_requests)}")
 
+        # Логируем событие начала генерации
+        await db.log_user_event(user_id, "generation_requested", {"id_gen": id_gen})
+
         # --- Подготовка данных для API, включая опции ---
         data = aiohttp.FormData()
         data.add_field('image', photo_bytes, filename=f'{id_gen}.jpg', content_type='image/jpeg')
@@ -266,42 +282,67 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(config.CLOTHOFF_API_URL, data=data, headers=headers) as response:
                 response_text = await response.text()
-                logger.debug(f"API Raw Response ({response.status}) for id_gen {id_gen}: {response_text}")
+                logger.debug(f"API Raw Response ({response.status}) for id_gen {id_gen}: {response_text[:500]}") # Log first 500 chars
 
                 if response.status == 200:
                     logger.info(f"API call successful for id_gen {id_gen}. Waiting for webhook.")
-                    # Можно обновить статус
-                    # await context.bot.edit_message_text(get_text("photo_sent_for_processing", user_lang), chat_id=chat_id, message_id=status_message.message_id)
-                else:
-                    logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text}")
+                    # Статус не меняем, пользователь ждет результат. pending_requests очистится в queue_processor
+                else: # API ответило с ошибкой
+                    logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text[:200]}")
+                    await db.add_user_photos(user_id, 1) # Возвращаем фото
                     if id_gen in bot_state.pending_requests: del bot_state.pending_requests[id_gen]
-                    # Возвращаем фото на баланс при ошибке API
-                    await db.add_user_photos(user_id, 1)
-                    error_details = response_text[:100] # Обрезаем длинный ответ
+                    
+                    error_details = response_text[:100] 
+                    # status_message должно быть определено здесь, т.к. API вызов был сделан
                     await context.bot.edit_message_text(
                         get_text("api_error", user_lang).format(status=response.status, details=error_details),
                         chat_id=chat_id,
                         message_id=status_message.message_id
                     )
+                    return # Завершаем обработку здесь, т.к. ошибка API обработана
 
-    except aiohttp.ClientError as e:
-        logger.error(f"Network error calling for user {user_id} (id_gen: {id_gen}): {e}")
-        if id_gen and id_gen in bot_state.pending_requests:
-             status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
-             if status_message_id:
-                  await context.bot.edit_message_text(get_text("network_error", user_lang), chat_id=chat_id, message_id=status_message_id)
-             del bot_state.pending_requests[id_gen]
-        # Возвращаем фото на баланс при сетевой ошибке
-        await db.add_user_photos(user_id, 1)
-    except Exception as e:
-        logger.exception(f"Unexpected error in handle_photo for user {user_id} (id_gen: {id_gen}): {e}")
-        if id_gen and id_gen in bot_state.pending_requests:
-            status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
-            if status_message_id:
-                 await context.bot.edit_message_text(get_text("unexpected_processing_error", user_lang), chat_id=chat_id, message_id=status_message_id)
-            del bot_state.pending_requests[id_gen]
-        # Возвращаем фото на баланс при неожиданной ошибке
-        await db.add_user_photos(user_id, 1)
+    except aiohttp.ClientError as e: # Сетевая ошибка (таймаут, недоступность сервера и т.д.)
+        logger.error(f"API request ClientError for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
+        # Фото было списано до этого блока try-except (если id_gen существует)
+        if id_gen: # Если id_gen был сгенерирован, значит фото списано
+            await db.add_user_photos(user_id, 1) 
+            status_message_id_to_edit = None
+            if id_gen in bot_state.pending_requests:
+                status_message_id_to_edit = bot_state.pending_requests[id_gen].get("status_message_id")
+                del bot_state.pending_requests[id_gen]
+            
+            if status_message_id_to_edit:
+                await context.bot.edit_message_text(
+                    get_text("network_error", user_lang), 
+                    chat_id=chat_id, 
+                    message_id=status_message_id_to_edit
+                )
+            else: # Сообщение "в обработке" не было отправлено или не найдено, но ошибка произошла
+                await update.message.reply_text(get_text("network_error", user_lang), reply_to_message_id=message_id)
+        else: # Ошибка произошла до генерации id_gen и списания фото (маловероятно здесь, но для полноты)
+            await update.message.reply_text(get_text("network_error", user_lang), reply_to_message_id=message_id)
+        return
+
+    except Exception as e: # Любая другая непредвиденная ошибка
+        logger.exception(f"Unexpected error in photo handling for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
+        if id_gen: # Если id_gen был сгенерирован, значит фото списано
+            await db.add_user_photos(user_id, 1)
+            status_message_id_to_edit = None
+            if id_gen in bot_state.pending_requests:
+                status_message_id_to_edit = bot_state.pending_requests[id_gen].get("status_message_id")
+                del bot_state.pending_requests[id_gen]
+
+            if status_message_id_to_edit:
+                await context.bot.edit_message_text(
+                    get_text("unexpected_processing_error", user_lang), 
+                    chat_id=chat_id, 
+                    message_id=status_message_id_to_edit
+                )
+            else: # Сообщение "в обработке" не было отправлено или не найдено
+                 await update.message.reply_text(get_text("unexpected_processing_error", user_lang), reply_to_message_id=message_id)
+        else: # Ошибка до id_gen
+            await update.message.reply_text(get_text("unexpected_processing_error", user_lang), reply_to_message_id=message_id)
+        return
 
 # --- Настройки ---
 @require_agreement
@@ -560,6 +601,14 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         package_info = payments.get_package_info(package_id, user_lang)
         
         if package_info:
+            # Логируем событие инициации платежа
+            await db.log_user_event(user_id, "payment_initiated", {
+                "package_id": package_id,
+                "package_name": package_info.get('name'),
+                "package_price": package_info.get('price'),
+                "package_photos": package_info.get('photos')
+            })
+
             text = get_text("package_details", user_lang).format(
                 name=package_info['name'],
                 description=package_info['description'],
@@ -698,6 +747,13 @@ async def notify_payment_success(user_id: int, package_name: str, photos_added: 
             photos=photos_added,
             new_balance=new_balance
         )
+
+        # Логируем успешный платеж перед отправкой уведомления
+        await db.log_user_event(user_id, "payment_successful", {
+            "package_name": package_name,
+            "photos_added": photos_added,
+            "new_balance_after_payment": new_balance
+        })
 
         # Сохраняем уведомление в bot_state для отправки через основной цикл
         notification_data = {
