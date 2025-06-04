@@ -143,6 +143,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.MARKDOWN
                 )
         except FileNotFoundError:
+            import os
+            current_dir = os.getcwd()
+            logger.info(f"Current working directory: {current_dir}")
+            
+            # List all files in current directory
+            files = os.listdir(current_dir)
+            logger.info(f"Files in current directory: {files}")
+            
+            # Check if images directory exists and list its contents
+            images_dir = os.path.join(current_dir, 'images')
+            if os.path.exists(images_dir):
+                image_files = os.listdir(images_dir)
+                logger.info(f"Files in images directory: {image_files}")
+            else:
+                logger.error("Images directory not found")
             logger.error("welcome.png not found. Sending only text message for /start.")
             await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
@@ -294,37 +309,36 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data['db_user']
     user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
     current_options = user_data.get("processing_options", {})
-    chat_id = update.effective_chat.id # Получаем chat_id
+    # chat_id = update.effective_chat.id # No longer needed directly here as we use update.message.reply_text
 
     text = f"{get_text('settings_title', user_lang)}\n\n"
-    # Можно добавить отображение текущих настроек текстом, но клавиатура уже показывает их
-    # text += f"{get_text('settings_current_options', user_lang)}\n"
-    # for key, value in current_options.items():
-    #      if value:
-    #          text += f"- {get_text(f'option_{key}', user_lang)}: {value}\n"
-
     text += get_text("settings_choose_option", user_lang)
 
-    try:
-        with open('images/settings.png', 'rb') as photo:
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=photo,
-                caption=text,
-                reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-            )
-    except FileNotFoundError:
-        logger.error("settings.png not found. Sending only text message for /settings.")
-        await update.message.reply_text(
-            text=text,
-            reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-        )
-    except Exception as e:
-        logger.error(f"Error sending settings photo for /settings: {e}")
-        await update.message.reply_text(
-            text=text,
-            reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-        )
+    # try:
+    #     with open('images/settings.png', 'rb') as photo:
+    #         await context.bot.send_photo(
+    #             chat_id=chat_id,
+    #             photo=photo,
+    #             caption=text,
+    #             reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+    #         )
+    # except FileNotFoundError:
+    #     logger.error("settings.png not found. Sending only text message for /settings.")
+    #     await update.message.reply_text(
+    #         text=text,
+    #         reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+    #     )
+    # except Exception as e:
+    #     logger.error(f"Error sending settings photo for /settings: {e}")
+    #     await update.message.reply_text(
+    #         text=text,
+    #         reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+    #     )
+    
+    await update.message.reply_text(
+        text=text,
+        reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
+    )
 
 # --- Обработчик Callback Query (нажатия кнопок) ---
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -457,10 +471,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         option_key = parts[1]
         new_value_str = parts[2]
 
-        if option_key == "postprocessing": # Example of type conversion if needed
-            current_options[option_key] = new_value_str.lower() == "true" if new_value_str else ""
-        else:
-            current_options[option_key] = new_value_str
+        current_options[option_key] = new_value_str
         
         success = await db.update_user_data(user.id, {"processing_options": current_options})
         if success:
