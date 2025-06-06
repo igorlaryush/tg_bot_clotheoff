@@ -1,45 +1,81 @@
-import os
 import logging
-import secrets
-from dotenv import load_dotenv
+import os # Added for os.getenv()
+from dotenv import dotenv_values
 
 logger = logging.getLogger(__name__)
 
+# Load .env file if it exists. Returns an empty dict if not found.
+dotenv_config = dotenv_values(".env")
 
-load_dotenv(override=True)
+def get_config_value(key: str, default: str = None) -> str | None:
+    """Gets a config value from .env, then os.environ, then default."""
+    value = dotenv_config.get(key)
+    if value is None:
+        value = os.getenv(key)
+    if value is None:
+        value = default
+    return value
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CLOTHOFF_API_KEY = os.getenv("CLOTHOFF_API_KEY")
-PORT = int(os.getenv("PORT", '8080'))
-print(PORT)
+# --- Core Bot Configuration ---
+TELEGRAM_BOT_TOKEN = get_config_value("TELEGRAM_BOT_TOKEN")
+CLOTHOFF_API_KEY = get_config_value("CLOTHOFF_API_KEY")
+SCHEDULER_SECRET_TOKEN = get_config_value("SCHEDULER_SECRET_TOKEN")
 
-WEBHOOK_SECRET_PATH = os.getenv("WEBHOOK_SECRET_PATH")
-logger.info("CONFIG.PY: Read from env: RAW WEBHOOK_SECRET_PATH_FROM_ENV = '%s'", WEBHOOK_SECRET_PATH)
+PORT_STR = get_config_value("PORT", "8080")
+PORT = int(PORT_STR) if PORT_STR else 8080
 
+WEBHOOK_SECRET_PATH = get_config_value("WEBHOOK_SECRET_PATH")
+logger.info("CONFIG.PY: Read WEBHOOK_SECRET_PATH = '%s'", WEBHOOK_SECRET_PATH)
 if not WEBHOOK_SECRET_PATH:
-    raise ValueError("WEBHOOK_SECRET_PATH is not set in environment variables.")
+    # This one is critical, so we might still want to raise an error if not set by any means.
+    # For now, following the pattern. If it must be present, an explicit check after get_config_value is needed.
+    logger.warning("WEBHOOK_SECRET_PATH is not set. This might cause issues.")
+    # raise ValueError("WEBHOOK_SECRET_PATH is not set in environment variables or .env")
 
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-FIRESTORE_DB_NAME = os.getenv("FIRESTORE_DB_NAME", "undress-tg-bot-prod")
+# --- GCP & Firestore ---
+GCP_PROJECT_ID = get_config_value("GCP_PROJECT_ID")
+FIRESTORE_DB_NAME = get_config_value("FIRESTORE_DB_NAME", "undress-tg-bot-prod")
 
-DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ru")
-SUPPORTED_LANGUAGES = ['en', 'ru']
+# --- Localization ---
+DEFAULT_LANGUAGE = get_config_value("DEFAULT_LANGUAGE", "ru")
+SUPPORTED_LANGUAGES = ['en', 'ru'] # This might remain hardcoded or be from config if needed
 
-CLOTHOFF_API_URL = "https://public-api.clothoff.net/undress"
+# --- External APIs ---
+CLOTHOFF_API_URL = get_config_value("CLOTHOFF_API_URL", "https://public-api.clothoff.net/undress")
 
+# --- StreamPay Configuration ---
+STREAMPAY_API_URL = get_config_value("STREAMPAY_API_URL", "https://api.streampay.org")
+STREAMPAY_STORE_ID_STR = get_config_value("STREAMPAY_STORE_ID", "0")
+STREAMPAY_STORE_ID = int(STREAMPAY_STORE_ID_STR) if STREAMPAY_STORE_ID_STR else 0
+STREAMPAY_PRIVATE_KEY = get_config_value("STREAMPAY_PRIVATE_KEY")
+STREAMPAY_PUBLIC_KEY = get_config_value("STREAMPAY_PUBLIC_KEY")
+STREAMPAY_ENABLED = bool(STREAMPAY_STORE_ID and STREAMPAY_PRIVATE_KEY and STREAMPAY_PUBLIC_KEY)
 
-BASE_URL = os.getenv("BASE_URL")
-logger.info(f"CONFIG.PY: Read from env: RAW BASE_URL = '{BASE_URL}'")
-
-if BASE_URL:
-    base_url = BASE_URL.rstrip('/')
-    CLOTHOFF_RECEIVER_URL = f"{base_url}/webhook"
-    TELEGRAM_RECEIVER_URL = f"{base_url}/{WEBHOOK_SECRET_PATH}"
-    logger.info(f"CONFIG.PY: Final TELEGRAM_RECEIVER_URL = '{TELEGRAM_RECEIVER_URL}'")
+if STREAMPAY_ENABLED:
+    logger.info("StreamPay payment system enabled")
 else:
-    CLOTHOFF_RECEIVER_URL = None
-    TELEGRAM_RECEIVER_URL = None
-    logger.warning("BASE_URL is not set in environment variables. Derived URLs (Telegram/Clothoff receiver) are None.")
+    logger.warning("StreamPay payment system disabled - missing configuration")
+
+# --- URL Configuration (derived from BASE_URL) ---
+BASE_URL = get_config_value("BASE_URL")
+logger.info(f"CONFIG.PY: Read BASE_URL = '{BASE_URL}'")
+
+CLOTHOFF_RECEIVER_URL = None
+TELEGRAM_RECEIVER_URL = None
+STREAMPAY_CALLBACK_URL = None
+
+if BASE_URL and WEBHOOK_SECRET_PATH: # Ensure both are present for TELEGRAM_RECEIVER_URL
+    base_url_stripped = BASE_URL.rstrip('/')
+    CLOTHOFF_RECEIVER_URL = f"{base_url_stripped}/webhook"
+    TELEGRAM_RECEIVER_URL = f"{base_url_stripped}/{WEBHOOK_SECRET_PATH}"
+    STREAMPAY_CALLBACK_URL = f"{base_url_stripped}/payment/callback"
+    logger.info(f"CONFIG.PY: Final TELEGRAM_RECEIVER_URL = '{TELEGRAM_RECEIVER_URL}'")
+    logger.info(f"CONFIG.PY: Final STREAMPAY_CALLBACK_URL = '{STREAMPAY_CALLBACK_URL}'")
+    logger.info(f"CONFIG.PY: Final CLOTHOFF_RECEIVER_URL = '{CLOTHOFF_RECEIVER_URL}'")
+elif not BASE_URL:
+    logger.warning("BASE_URL is not set. Derived URLs (Telegram/Clothoff/StreamPay receiver) will be None.")
+elif not WEBHOOK_SECRET_PATH:
+    logger.warning("WEBHOOK_SECRET_PATH is not set. TELEGRAM_RECEIVER_URL cannot be fully constructed.")
 
 
 def setup_logging():
