@@ -170,12 +170,12 @@ TEXTS = {
         "ru": "🍑 Размер ягодиц",
     },
      "option_pose": {
-        "en": "🧘 Pose",
-        "ru": "🧘 Поза",
+        "en": "🧘 Sex positions",
+        "ru": "🧘 Секс позы",
     },
     "option_cloth": {
-        "en": "👙 Cloth",
-        "ru": "👙 Одежда",
+        "en": "👙 Costume",
+        "ru": "👙 Костюм",
     },
     "option_not_set": {
         "en": "Not set",
@@ -310,7 +310,71 @@ TEXTS = {
     "scheduled_notification_promo": {
         "en": "Want something more? The time has come 🥵\n\nCreate neurophotos with her face ACCORDING TO YOUR REQUEST, any desire of your imagination will be brought to life in just a few seconds\n\n1. Describe what should be in the photo using /settings.\n2. Send a high-quality photo of a person.\n3. Enjoy the results!",
         "ru": "Хочешь чего-то большего ? Время пришло 🥵\n\nСоздавай нейрофото с её лицом по СВОЕМУ ЗАПРОСУ, любое желания твоей фантазии будет воплощено в жизнь всего за не сколько секунд\n\n1. Опиши что должно быть на фото /settings. \n2. Отправь фото человека, в хорошем качестве.\n3. Наслаждайся результатами!",
-    }
+    },
+    "settings_intro": {
+        "en": "⚙️ *Settings*\\n\\nHere you can change the bot's language.",
+        "ru": "⚙️ *Настройки*\\n\\nЗдесь вы можете изменить язык бота."
+    },
+    "configure_photo_settings_title": {
+        "en": "⚙️ **Configure Photo**\\n\\nSelect the options for this photo, then press 'Process'.\\n\\n*These settings apply only to this image.*",
+        "ru": "⚙️ **Настройка фото**\\n\\nВыберите параметры для этого изображения, затем нажмите 'Обработать'.\\n\\n*Эти настройки применяются только для этого фото.*"
+    },
+    "process_button": {
+        "en": "✅ Process Photo",
+        "ru": "✅ Обработать фото"
+    },
+    "photo_processing_cancelled": {
+        "en": "Photo processing cancelled.",
+        "ru": "Обработка фото отменена."
+    },
+    "option_value_display": {
+        "en": "{option_name}: *{value}*",
+        "ru": "{option_name}: *{value}*"
+    },
+    "option_value_not_set": {
+        "en": "{option_name}: Not set",
+        "ru": "{option_name}: Не задано"
+    },
+    "select_option_title": {
+        "en": "Select a value for *{option_name}*:",
+        "ru": "Выберите значение для *{option_name}*:"
+    },
+    "settings_appearance_intro": {
+        "en": "🎨 *Appearance Settings*\\n\\nChoose how you want the generated person to look.",
+        "ru": "🎨 *Настройки внешности*\\n\\nВыберите, как будет выглядеть сгенерированный человек."
+    },
+    "settings_saved": {
+        "en": "✅ Settings saved!",
+        "ru": "✅ Настройки сохранены!"
+    },
+    "select_language": {
+        "en": "Please select your language:",
+        "ru": "Пожалуйста, выберите ваш язык:"
+    },
+    "select_postprocessing": {
+        "en": "Select a post-processing filter:",
+        "ru": "Выберите фильтр постобработки:"
+    },
+    "select_age": {
+        "en": "Select the desired age:",
+        "ru": "Выберите желаемый возраст:"
+    },
+    "select_breast_size": {
+        "en": "Select the desired breast size:",
+        "ru": "Выберите желаемый размер груди:"
+    },
+    "select_body_type": {
+        "en": "Select the desired body type:",
+        "ru": "Выберите желаемый тип телосложения:"
+    },
+    "select_butt_size": {
+        "en": "Select the desired butt size:",
+        "ru": "Выберите желаемый размер ягодиц:"
+    },
+    "option_appearance": {
+        "en": "👙 Undress",
+        "ru": "👙 Раздеть"
+    },
 }
 
 # --- Получение текста ---
@@ -340,3 +404,17 @@ def get_agreement_text(lang_code: str) -> str:
     if not lang_code:
         lang_code = DEFAULT_LANG
     return AGREEMENTS.get(lang_code, AGREEMENTS.get(DEFAULT_LANG, "Missing agreement text."))
+
+# --- Опции для настроек (как в config.py или здесь) ---
+APPEARANCE_OPTIONS = {
+    "settings_choose_option": "Please choose an option to configure:",
+    "settings_saved": "✅ Settings saved!",
+    "settings_appearance_intro": "🎨 *Appearance Settings*\\n\\nChoose how you want the generated person to look.",
+    "select_language": "Please select your language:",
+    "select_postprocessing": "Select a post-processing filter:",
+    "select_age": "Select the desired age:",
+    "option_pose": "Pose",
+    "option_cloth": "Cloth",
+    "option_appearance": "🎨 Appearance",
+    "value_not_set": "Not set",
+}
