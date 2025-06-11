@@ -91,7 +91,6 @@ async def setup_bot_commands(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.set_my_commands([
         BotCommand("start", "Start/Restart the bot"),
         BotCommand("help", "Show help message"),
-        BotCommand("settings", "Change language & processing options"),
         BotCommand("balance", "Check balance and buy photos"),
     ])
     logger.info("Bot commands updated.")
@@ -144,36 +143,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # User has agreed. Send welcome message in their stored language.
         user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-        welcome_message_text = get_text("start_message", user_lang).format(user_name=user.first_name)
-        try:
-            with open('images/welcome.png', 'rb') as photo:
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo,
-                    caption=welcome_message_text,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-        except FileNotFoundError:
-            import os
-            current_dir = os.getcwd()
-            logger.info(f"Current working directory: {current_dir}")
-            
-            # List all files in current directory
-            files = os.listdir(current_dir)
-            logger.info(f"Files in current directory: {files}")
-            
-            # Check if images directory exists and list its contents
-            images_dir = os.path.join(current_dir, 'images')
-            if os.path.exists(images_dir):
-                image_files = os.listdir(images_dir)
-                logger.info(f"Files in images directory: {image_files}")
-            else:
-                logger.error("Images directory not found")
-            logger.error("welcome.png not found. Sending only text message for /start.")
-            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
-        except Exception as e:
-            logger.error(f"Error sending welcome photo for /start: {e}")
-            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+
+        # Send the persistent reply keyboard ONCE.
+        if not user_data.get("reply_keyboard_set"):
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=get_text("menu_activated", user_lang),
+                reply_markup=keyboards.get_main_reply_keyboard(user_lang)
+            )
+            await db.update_user_data(user.id, {"reply_keyboard_set": True})
+
+        current_balance = await db.get_user_photos_balance(user.id)
+        
+        welcome_message_text = get_text("start_message", user_lang).format(
+            user_name=user.first_name,
+            balance=current_balance
+        )
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=welcome_message_text,
+            reply_markup=keyboards.get_start_keyboard(user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 @require_agreement # Теперь /help требует согласия
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -248,32 +240,30 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'file_id': photo.file_id,
         'message_id': message_id,
         'settings': {},
-        'config_message_id': None # To be stored after sending the keyboard
+        'config_message_id': None, # To be stored after sending the keyboard
+        'is_photo_message': True   # Flag to indicate the config message has a photo
     }
 
     logger.info(f"Starting photo configuration session for user {user_id}")
 
     # Send the configuration keyboard
-    config_message = await update.message.reply_text(
-        text=get_text("configure_photo_settings_title", user_lang),
-        reply_markup=keyboards.get_photo_settings_keyboard(user_lang, {}),
-        parse_mode=ParseMode.MARKDOWN
-    )
+    try:
+        with open('images/configure_photo.jpg', 'rb') as photo_to_send:
+            config_message = await update.message.reply_photo(
+                photo=photo_to_send,
+                caption=get_text("configure_photo_settings_title", user_lang),
+                reply_markup=keyboards.get_photo_settings_keyboard(user_lang, {}),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    except FileNotFoundError:
+        logger.warning("configure_photo.jpg not found. Sending text-only config message.")
+        config_message = await update.message.reply_text(
+            text=get_text("configure_photo_settings_title", user_lang),
+            reply_markup=keyboards.get_photo_settings_keyboard(user_lang, {}),
+            parse_mode=ParseMode.MARKDOWN
+        )
     # Save the message ID of the configuration menu so we can edit it
     context.user_data['pending_photo_session']['config_message_id'] = config_message.message_id
-
-# --- Настройки (упрощено) ---
-@require_agreement
-async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /settings command, now only for language."""
-    user_data = context.user_data['db_user']
-    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-    
-    await update.message.reply_text(
-        text=get_text("settings_intro", user_lang),
-        reply_markup=keyboards.get_settings_main_keyboard(user_lang),
-        parse_mode=ParseMode.MARKDOWN
-    )
 
 # --- Обработчик всех inline-кнопок ---
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -306,50 +296,76 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         current_settings = session.get('settings', {})
         action, *params = callback_data.split(':')
 
+        async def edit_or_replace(text, reply_markup, parse_mode=None):
+            """Deletes the photo message and sends a new text one on first interaction."""
+            if session.get('is_photo_message'):
+                await query.delete_message()
+                new_message = await context.bot.send_message(
+                    chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
+                session['config_message_id'] = new_message.message_id
+                session['is_photo_message'] = False
+            else:
+                try:
+                    await query.edit_message_text(
+                        text=text, reply_markup=reply_markup, parse_mode=parse_mode
+                    )
+                except BadRequest as e:
+                    if "Message is not modified" in str(e):
+                        pass # Ignore if the message content is the same
+                    else:
+                        logger.error(f"Failed to edit photo config message: {e}")
+                        raise e
+
         if action == "photo_submenu":
             submenu_key = params[0]
             if submenu_key == "appearance":
-                await query.edit_message_text(
+                await edit_or_replace(
                     text=get_text("settings_appearance_intro", current_lang),
                     reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
                 )
 
         elif action == "photo_option":
             option_key = params[0]
-            await query.edit_message_text(
+            await edit_or_replace(
                 text=get_text("select_option_title", current_lang).format(option_name=get_text(f"option_{option_key}", current_lang)),
-                reply_markup=keyboards.get_photo_option_value_keyboard(option_key, current_lang),
+                reply_markup=keyboards.get_photo_option_value_keyboard(option_key, current_lang, current_settings),
                 parse_mode=ParseMode.MARKDOWN
             )
         
         elif action == "photo_set":
             option_key, value = params
-            current_settings[option_key] = value
-            # Go back to the correct menu
-            back_target = "appearance" if option_key in keyboards.APPEARANCE_OPTIONS else "main"
             
-            if back_target == "main":
-                 await query.edit_message_text(
-                    text=get_text("configure_photo_settings_title", current_lang),
-                    reply_markup=keyboards.get_photo_settings_keyboard(current_lang, current_settings),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            else: # appearance
-                 await query.edit_message_text(
+            # If the user clicks the same option, un-set it. Otherwise, set it.
+            if current_settings.get(option_key) == value:
+                current_settings.pop(option_key, None)
+            else:
+                current_settings[option_key] = value
+
+            if option_key in keyboards.APPEARANCE_OPTIONS:
+                # Return to the appearance submenu
+                await edit_or_replace(
                     text=get_text("settings_appearance_intro", current_lang),
                     reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
+                )
+            else:
+                # Re-render the same value selection screen to show the updated checkmark
+                await edit_or_replace(
+                    text=get_text("select_option_title", current_lang).format(option_name=get_text(f"option_{option_key}", current_lang)),
+                    reply_markup=keyboards.get_photo_option_value_keyboard(option_key, current_lang, current_settings),
+                    parse_mode=ParseMode.MARKDOWN,
                 )
 
         elif action == "photo_back":
             target_menu = params[0]
             if target_menu == "main":
-                await query.edit_message_text(
+                await edit_or_replace(
                     text=get_text("configure_photo_settings_title", current_lang),
                     reply_markup=keyboards.get_photo_settings_keyboard(current_lang, current_settings),
                     parse_mode=ParseMode.MARKDOWN
                 )
             elif target_menu == "appearance":
-                 await query.edit_message_text(
+                 await edit_or_replace(
                     text=get_text("settings_appearance_intro", current_lang),
                     reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
                 )
@@ -361,48 +377,62 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await query.delete_message()
                 # Run the processing logic
                 await _execute_photo_processing(update, context, current_settings)
+        return
 
-            elif sub_action == "cancel":
-                del context.user_data['pending_photo_session']
-                await query.edit_message_text(text=get_text("photo_processing_cancelled", current_lang))
+    # --- Upload Photo Prompt ---
+    if callback_data == "show_upload_prompt":
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+        
+        try:
+            with open('images/upload_guide.mp4', 'rb') as video:
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=video,
+                    caption=get_text("upload_photo_prompt", user_lang)
+                )
+        except FileNotFoundError:
+             logger.warning("Video file 'upload_guide.mp4' not found. Sending text prompt only.")
+             await query.message.reply_text(get_text("upload_photo_prompt", user_lang))
+        except Exception as e:
+             logger.error(f"Failed to send video prompt: {e}")
+             await query.message.reply_text(get_text("upload_photo_prompt", user_lang)) # Fallback on other errors
+        
         return
 
     # --- Language Selection (set_lang:en, set_lang:ru) ---
     if callback_data.startswith("set_lang:"):
         chosen_lang = callback_data.split(":")[1]
-        
-        # Update language in DB and local user_data
-        if chosen_lang != user_data.get("language"):
-            success = await db.update_user_data(user.id, {"language": chosen_lang})
-            if success:
-                user_data["language"] = chosen_lang
-                current_lang = chosen_lang # Update for current context
-                await query.edit_message_text(get_text("language_set", chosen_lang))
-            else:
-                await query.edit_message_text(get_text("error_occurred", current_lang))
-                # Re-set flag if DB update failed during initial phase to allow retry
-                if initial_selection_phase:
-                     context.user_data['initial_lang_selection'] = True
-                return
-        else:
-            # Language already set to this, just edit message to confirm and remove old keyboard
-            await query.edit_message_text(get_text("language_set", chosen_lang))
 
-        if initial_selection_phase:
-            # Coming from /start, now show agreement in chosen language
-            await send_agreement_prompt(update, context, user_data)
-        else:
-            # Language changed from settings. The settings menu should be refreshed by user action (e.g. "Back" button)
-            # or specific logic in settings flow if message needs to be auto-updated.
-            # For now, just confirming the language set is sufficient here.
-            # The 'show_settings_option:language' will display choices, and its 'Back' button handles return.
-            # After changing language from settings, show the simplified main menu again
-            await query.edit_message_text(
-                text=get_text("settings_intro", chosen_lang),
-                reply_markup=keyboards.get_settings_main_keyboard(chosen_lang),
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
+        db_update_needed = chosen_lang != user_data.get("language")
+        success = True # Assume success if no DB update is needed
+
+        if db_update_needed:
+            success = await db.update_user_data(user.id, {"language": chosen_lang})
+
+        if success:
+            user_data["language"] = chosen_lang # Update local state
+
+            if initial_selection_phase:
+                # New user flow: show agreement next
+                await send_agreement_prompt(update, context, user_data)
+            else:
+                # Existing user flow: show updated start menu directly
+                current_balance = await db.get_user_photos_balance(user.id)
+                welcome_message_text = get_text("start_message", chosen_lang).format(
+                    user_name=user.first_name,
+                    balance=current_balance
+                )
+                await query.edit_message_text(
+                    text=welcome_message_text,
+                    reply_markup=keyboards.get_start_keyboard(chosen_lang),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+        else: # DB update failed
+            await query.edit_message_text(get_text("error_occurred", current_lang))
+            if initial_selection_phase:
+                context.user_data['initial_lang_selection'] = True # Allow retry
+        
+        return
 
     # --- Agreement Handling (accept_terms:true, decline_terms:true) ---
     elif callback_data.startswith("accept_terms:"): # Handles "accept_terms:true"
@@ -457,7 +487,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
              await handle_payment_callbacks(update, context, callback_data, user_data, query)
         return
 
-    # --- Обработка кнопок НАСТРОЕК (упрощено) ---
+    # --- Language selection (from /start) ---
     elif callback_data.startswith("show_settings_option:"):
         option_key = callback_data.split(":")[1]
         user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
@@ -466,23 +496,26 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             # This now opens the language selection keyboard
              await query.edit_message_text(
                 text=get_text("select_language", user_lang),
-                reply_markup=keyboards.get_option_value_keyboard(option_key, user_lang, is_photo_flow=False)
+                reply_markup=keyboards.get_option_value_keyboard(
+                    option_key=option_key,
+                    lang=user_lang,
+                    current_lang=user_lang
+                )
             )
 
-    elif callback_data.startswith("back_to_settings:"):
-        target_menu = callback_data.split(":")[1]
+    # --- Back to Start Menu (from language selection) ---
+    elif callback_data == "back_to_start":
         user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-
-        if target_menu == "main":
-            await query.edit_message_text(
-                text=get_text("settings_intro", user_lang),
-                reply_markup=keyboards.get_settings_main_keyboard(user_lang),
-                parse_mode=ParseMode.MARKDOWN
-            )
-    
-    # Удаляем старую логику обработки кнопок настроек, которая больше не нужна
-    # elif callback_data.startswith("show_settings_submenu:"): ...
-    # elif callback_data.startswith("set_setting:"): ...
+        current_balance = await db.get_user_photos_balance(user.id)
+        welcome_message_text = get_text("start_message", user_lang).format(
+            user_name=user.first_name,
+            balance=current_balance
+        )
+        await query.edit_message_text(
+            text=welcome_message_text,
+            reply_markup=keyboards.get_start_keyboard(user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
     # --- Обработка кнопок ПЛАТЕЖЕЙ ---
     # (Перенесено в отдельную функцию для чистоты)
@@ -818,6 +851,15 @@ async def _execute_photo_processing(
         for key, value in processing_options.items():
             if value: # Only send non-empty values
                 data.add_field(key, str(value))
+
+        # Log the request details before sending
+        log_payload = {
+            "id_gen": id_gen,
+            "webhook": config.CLOTHOFF_RECEIVER_URL,
+            "image_size": len(photo_bytes),
+            **processing_options
+        }
+        logger.info(f"Sending request to Clothoff API for id_gen {id_gen}. Payload: {log_payload}")
 
         headers = {'x-api-key': config.CLOTHOFF_API_KEY, 'accept': 'application/json'}
 

@@ -77,6 +77,8 @@ elif not BASE_URL:
 elif not WEBHOOK_SECRET_PATH:
     logger.warning("WEBHOOK_SECRET_PATH is not set. TELEGRAM_RECEIVER_URL cannot be fully constructed.")
 
+# --- Telegram Channel URL ---
+TELEGRAM_CHANNEL_URL = os.getenv("TELEGRAM_CHANNEL_URL", "https://t.me/telegram") # Placeholder URL
 
 def setup_logging():
     logging.basicConfig(

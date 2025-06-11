@@ -65,6 +65,8 @@ async def get_or_create_user(user_id: int, chat_id: int, username: str = None, f
                 update_data["language"] = config.DEFAULT_LANGUAGE
             if "agreed_to_terms" not in current_data:
                 update_data["agreed_to_terms"] = False
+            if "reply_keyboard_set" not in current_data:
+                update_data["reply_keyboard_set"] = False
 
             if len(update_data) > 1: # Update only if more than last_seen changed
                 await user_doc_ref.update(update_data)
@@ -88,6 +90,7 @@ async def get_or_create_user(user_id: int, chat_id: int, username: str = None, f
                 "last_seen": SERVER_TIMESTAMP,
                 "language": config.DEFAULT_LANGUAGE, # Set default language
                 "agreed_to_terms": False,           # Not agreed yet
+                "reply_keyboard_set": False,        # Persistent keyboard not set yet
                 "source": source, # Add source
             }
             await user_doc_ref.set(user_data)

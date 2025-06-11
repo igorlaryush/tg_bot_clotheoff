@@ -112,18 +112,78 @@ TEXTS = {
 
     # --- Старт и Помощь ---
     "start_message": {
-        "en": "Hello {user_name}! 👋\n\n**How to use the bot:**\n\n1️⃣ **Quick Start:** Simply send a photo with a person, and I'll process it with default settings!\n\n2️⃣ **Custom Processing:**\n- Use /settings to customize processing options\n- Send a photo after changing settings\n\n💰 **Important:** Make sure you have enough balance before processing photos. Use /balance to check and buy more photos.\n\n⚠️ **Disclaimer:** Use this bot responsibly and ethically.",
-        "ru": "Привет, {user_name}! 👋\n\n**Как пользоваться ботом:**\n\n1️⃣ **Быстрый старт:** Просто отправьте фото с человеком, и я обработаю его с настройками по умолчанию!\n\n2️⃣ **Настраиваемая обработка:**\n- Используйте /settings для настройки параметров обработки\n- Отправьте фото после изменения настроек\n\n💰 **Важно:** Убедитесь, что у вас достаточно баланса перед обработкой фото. Используйте /balance для проверки и покупки фото.\n\n⚠️ **Отказ от ответственности:** Используйте этого бота ответственно и этично.",
+        "en": """
+Welcome back, {user_name}!
+
+Your balance: 
+😎 {balance} coins
+
+1 coin = 1 generation.
+To top up your balance, press the 'Buy VIP coins' button.
+
+❗️ We respect our users' privacy, so photos and request history are not stored anywhere.
+        """,
+        "ru": """
+С возвращением, {user_name}!
+
+Ваш баланс:
+😎 {balance} монет.
+
+1 монета = 1 генерация.
+Для того, чтобы пополнить баланс, нажми кнопку 'Купить монеты'.
+
+❗️ Мы уважаем конфиденциальность наших пользователей, поэтому фотографии и история запросов нигде не хранятся.
+        """
+    },
+    "upload_photo_button": {
+        "en": "📷 Upload Photo",
+        "ru": "📷 Загрузить фото"
+    },
+    "buy_coins_button": {
+        "en": "💎 Buy coins",
+        "ru": "💎 Купить монеты"
+    },
+    "my_channel_button": {
+        "en": "My Channel",
+        "ru": "Наш канал"
+    },
+    "menu_button": {
+        "en": "Start",
+        "ru": "Меню"
+    },
+    "menu_activated": {
+        "en": "You can now use the 'Menu' button below to return here at any time.",
+        "ru": "Теперь вы можете использовать кнопку 'Меню' для возврата сюда в любое время."
+    },
+    "upload_photo_prompt": {
+        "en": """
+🤓 First, you need to upload a photo, here are a few simple rules:
+
+➖ There should be only one person in the photo;
+➖ The person should be in the center;
+➖ Better lighting and quality = better result;
+➖ Make sure clothes do not hide the body;
+🔒 We respect our users' privacy, so photos and request history are not stored anywhere.
+        """,
+        "ru": """
+🤓 Сначала вам нужно загрузить фотографию, вот несколько простых правил:
+
+➖ На фото должен быть только один человек;
+➖ Человек должен быть в центре;
+➖ Лучшее освещение и качество = лучший результат;
+➖ Убедитесь, что одежда не скрывает тело;
+🔒 Мы уважаем конфиденциальность наших пользователей, поэтому фотографии и история запросов нигде не хранятся.
+        """
     },
     "help_message": {
-        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your /settings.\n"
+        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your settings.\n"
               "You will receive the result back here once it's ready.\n\n"
               "**Important:**\n"
               "- Ensure the image clearly shows one person.\n"
               "- Processing can take some time.\n"
               "- Results depend on the API's capabilities.\n"
               "- Use responsibly.",
-        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим /settings.\n"
+        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим настройкам.\n"
               "Вы получите результат здесь, когда он будет готов.\n\n"
               "**Важно:**\n"
               "- Убедитесь, что на изображении четко виден один человек.\n"
@@ -174,8 +234,8 @@ TEXTS = {
         "ru": "🧘 Секс позы",
     },
     "option_cloth": {
-        "en": "👙 Costume",
-        "ru": "👙 Костюм",
+        "en": "👗 Costume",
+        "ru": "👗 Костюм",
     },
     "option_not_set": {
         "en": "Not set",
@@ -316,8 +376,28 @@ TEXTS = {
         "ru": "⚙️ *Настройки*\\n\\nЗдесь вы можете изменить язык бота."
     },
     "configure_photo_settings_title": {
-        "en": "⚙️ **Configure Photo**\\n\\nSelect the options for this photo, then press 'Process'.\\n\\n*These settings apply only to this image.*",
-        "ru": "⚙️ **Настройка фото**\\n\\nВыберите параметры для этого изображения, затем нажмите 'Обработать'.\\n\\n*Эти настройки применяются только для этого фото.*"
+        "en": """
+❓ What would you like to do?
+
+1️⃣ Costume - See the girl in a sexy costume😏 
+
+2️⃣ Undress - Undressing with the ability to change body parameters
+
+3️⃣ Sex-pose - See the girl in a porn scene
+
+Press the button and enjoy 👇
+        """,
+        "ru": """
+❓ Что бы ты хотел сделать?
+
+1️⃣ Костюм - Посмотри на девушку в сексуальном костюме😏 
+
+2️⃣ Раздевание - Раздевание с возможностью изменения параметров тела
+
+3️⃣ Секс-поза - Посмотри на девушку в  порно сцене
+
+Нажмите кнопку и наслаждайтесь 👇
+        """
     },
     "process_button": {
         "en": "✅ Process Photo",
@@ -340,8 +420,8 @@ TEXTS = {
         "ru": "Выберите значение для *{option_name}*:"
     },
     "settings_appearance_intro": {
-        "en": "🎨 *Appearance Settings*\\n\\nChoose how you want the generated person to look.",
-        "ru": "🎨 *Настройки внешности*\\n\\nВыберите, как будет выглядеть сгенерированный человек."
+        "en": "🎨 *Appearance Settings*\n\nChoose how you want the generated person to look.",
+        "ru": "🎨 *Настройки внешности*\n\nВыберите, как будет выглядеть сгенерированный человек."
     },
     "settings_saved": {
         "en": "✅ Settings saved!",
@@ -409,7 +489,7 @@ def get_agreement_text(lang_code: str) -> str:
 APPEARANCE_OPTIONS = {
     "settings_choose_option": "Please choose an option to configure:",
     "settings_saved": "✅ Settings saved!",
-    "settings_appearance_intro": "🎨 *Appearance Settings*\\n\\nChoose how you want the generated person to look.",
+    "settings_appearance_intro": "🎨 *Appearance Settings*\n\nChoose how you want the generated person to look.",
     "select_language": "Please select your language:",
     "select_postprocessing": "Select a post-processing filter:",
     "select_age": "Select the desired age:",
