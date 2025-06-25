@@ -303,3 +303,26 @@ def get_start_keyboard(lang: str) -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+# === New: keyboard offering choice of payment provider ===
+
+def get_payment_methods_keyboard(package_id: str, lang: str) -> InlineKeyboardMarkup:
+    """Creates a keyboard that lets the user choose how to pay for a package."""
+    keyboard = [
+        # Existing provider – StreamPay
+        [InlineKeyboardButton(
+            f"💳 {get_text('pay_with_streampay', lang)}",  # e.g. "Pay by card"
+            callback_data=f"pay_method:streampay:{package_id}"
+        )],
+        # New provider – Telegram Stars
+        [InlineKeyboardButton(
+            f"⭐️ {get_text('pay_with_tgstars', lang)}",  # e.g. "Pay with Telegram Stars"
+            callback_data=f"pay_method:tgstars:{package_id}"
+        )],
+        # Back button
+        [InlineKeyboardButton(
+            get_text("back_to_packages", lang),
+            callback_data="show_packages"
+        )]
+    ]
+    return InlineKeyboardMarkup(keyboard)

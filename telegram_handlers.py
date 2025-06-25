@@ -3,8 +3,9 @@ import uuid
 from io import BytesIO
 import aiohttp
 from functools import wraps
+from datetime import datetime
 
-from telegram import Update, BotCommand, User, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand, User, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -529,6 +530,93 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
              await handle_payment_callbacks(update, context, callback_data, user_data, query)
         return
 
+    # --- Payment method selection ---
+    elif callback_data.startswith("pay_method:"):
+        # Format: pay_method:<method>:<package_id>
+        _, method, package_id = callback_data.split(":", 2)
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+
+        package_info = payments.get_package_info(package_id, user_lang)
+        if not package_info:
+            await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
+            return
+
+        if method == "streampay":
+            # Reuse existing flow to create StreamPay invoice (previously in confirm_purchase)
+            await query.edit_message_text(text=get_text("creating_payment", user_lang))
+            order_data = await payments.create_payment_order(user_data['user_id'], package_id)
+            if order_data:
+                text = get_text("payment_link_created", user_lang).format(
+                    package_name=package_info['name'],
+                    amount=package_info['price']
+                )
+                keyboard = [[InlineKeyboardButton(
+                    get_text("pay_now", user_lang),
+                    url=order_data['pay_url']
+                )]]
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await query.edit_message_text(text=get_text("payment_error", user_lang))
+            return
+
+        elif method == "tgstars":
+            # Attempt to create Telegram Stars invoice directly via send_invoice
+            
+            star_amount = int(package_info.get('stars_price') or package_info['price'])
+            if star_amount <= 0:
+                logger.error(f"Invalid star amount for package {package_id}: {star_amount}")
+                await query.edit_message_text(text=get_text("payment_error", user_lang))
+                return
+
+            payload = f"tgstars_{user.id}_{package_id}_{uuid.uuid4().hex[:8]}"
+
+            # Save pending order in DB (status pending) BEFORE sending invoice to link later update
+            order_data = {
+                "external_id": payload,
+                "user_id": user.id,
+                "package_id": package_id,
+                "invoice_id": None,
+                "amount": star_amount,
+                "currency": "XTR",
+                "photos_count": package_info['photos'],
+                "status": "pending",
+                "created_at": datetime.utcnow(),
+                "pay_url": None,
+                "method": "tgstars"
+            }
+            await db.create_payment_order(order_data)
+
+            # Replace message with invoice (Telegram will create a new message automatically)
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+            except Exception:
+                pass  # Ignore if can't delete
+
+            try:
+                await context.bot.send_invoice(
+                    chat_id=chat_id,
+                    title=package_info['name'],
+                    description=package_info['description'],
+                    payload=payload,
+                    provider_token='',  # Empty for Stars
+                    currency='XTR',
+                    prices=[LabeledPrice(package_info['name'], star_amount)],
+                    start_parameter="tgstars_payment"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send TG Stars invoice: {e}")
+                await context.bot.send_message(chat_id, get_text("payment_error", user_lang))
+            return
+
+        else:
+            logger.warning(f"Unknown payment method selected: {method}")
+            await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
+            return
+
     else:
         logger.warning(f"Unhandled agreed callback_data: {callback_data} from user {user.id}")
 
@@ -592,12 +680,10 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         package_info = payments.get_package_info(package_id, user_lang)
         
         if package_info:
-            # Логируем событие инициации платежа
-            await db.log_user_event(user_id, "payment_initiated", {
+            # Логируем событие выбора пакета (еще без выбора метода оплаты)
+            await db.log_user_event(user_id, "payment_package_selected", {
                 "package_id": package_id,
                 "package_name": package_info.get('name'),
-                "package_price": package_info.get('price'),
-                "package_photos": package_info.get('photos')
             })
 
             text = get_text("package_details", user_lang).format(
@@ -609,7 +695,7 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
             try:
                 await query.edit_message_text(
                     text=text,
-                    reply_markup=keyboards.get_payment_confirmation_keyboard(package_id, user_lang),
+                    reply_markup=keyboards.get_payment_methods_keyboard(package_id, user_lang),
                     parse_mode=ParseMode.MARKDOWN
                 )
             except BadRequest as e:
@@ -630,7 +716,7 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(text=get_text("creating_payment", user_lang))
         
         # Создаем заказ на оплату
-        order_data = await payments.create_payment_order(user_id, package_id)
+        order_data = await payments.create_payment_order(user_data['user_id'], package_id)
         
         if order_data:
             # Успешно создали заказ - показываем ссылку на оплату
@@ -905,3 +991,55 @@ async def _execute_photo_processing(
     finally:
         if 'pending_photo_session' in context.user_data:
             del context.user_data['pending_photo_session']
+
+@require_agreement
+async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles successful payments coming from Telegram Stars provider."""
+    payment = update.message.successful_payment
+    if not payment:
+        return
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Parse payload, expected: tgstars_<user_id>_<package_id>_<random>
+    payload_parts = payment.invoice_payload.split("_")
+    if len(payload_parts) < 3:
+        logger.error(f"Unexpected invoice payload format: {payment.invoice_payload}")
+        return
+
+    _prefix, payload_user_id, package_id, *_ = payload_parts
+    if str(user.id) != payload_user_id:
+        logger.warning(f"Payload user ID {payload_user_id} does not match sender {user.id}")
+
+    user_data = await db.get_or_create_user(user.id, chat_id, user.username, user.first_name)
+    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+
+    # Update order in DB
+    external_id = payment.invoice_payload
+    order = await db.get_payment_order_by_external_id(external_id)
+    if order and order.get("status") != "success":
+        update_data = {
+            "status": "success",
+            "updated_at": datetime.utcnow(),
+            "telegram_payment_charge_id": payment.telegram_payment_charge_id,
+            "provider_payment_charge_id": payment.provider_payment_charge_id,
+        }
+        await db.update_payment_order(external_id, update_data)
+        # Credit photos
+        photos_to_add = order["photos_count"] if order else 0
+        if photos_to_add:
+            await db.add_user_photos(user.id, photos_to_add)
+        new_balance = await db.get_user_photos_balance(user.id)
+        await notify_payment_success(user.id, order["package_id"], photos_to_add, new_balance)
+    else:
+        logger.info(f"Payment order already processed or not found for payload {external_id}")
+
+# === Telegram Stars pre-checkout ===
+async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Approves every pre_checkout_query (required for Stars)."""
+    query = update.pre_checkout_query
+    try:
+        await query.answer(ok=True)
+    except Exception as e:
+        logger.error(f"Failed to answer pre_checkout_query: {e}")

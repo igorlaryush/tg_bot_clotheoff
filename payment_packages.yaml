@@ -8,6 +8,7 @@ packages:
       ru: "Идеально для знакомства с сервисом"
     photos: 5
     price: 300
+    stars_price: 1
     currency: "RUB"
     popular: false
     

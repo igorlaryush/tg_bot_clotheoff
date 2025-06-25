@@ -455,6 +455,14 @@ Press the button and enjoy 👇
         "en": "👙 Undress",
         "ru": "👙 Раздеть"
     },
+    "pay_with_streampay": {
+        "en": "Pay by card",
+        "ru": "Оплата картой"
+    },
+    "pay_with_tgstars": {
+        "en": "Pay with Telegram Stars",
+        "ru": "Оплатить через Stars"
+    },
 }
 
 # --- Получение текста ---

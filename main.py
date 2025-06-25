@@ -34,6 +34,7 @@ from telegram.ext import (
     filters,
     Application,
     CallbackQueryHandler,
+    PreCheckoutQueryHandler,
 )
 
 import config
@@ -96,6 +97,8 @@ async def main():
     ptb_app.add_handler(CommandHandler("balance", telegram_handlers.balance_command))
     ptb_app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, telegram_handlers.handle_photo))
     ptb_app.add_handler(MessageHandler(menu_filter, telegram_handlers.start))
+    ptb_app.add_handler(PreCheckoutQueryHandler(telegram_handlers.pre_checkout_handler))
+    ptb_app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, telegram_handlers.successful_payment_handler))
     ptb_app.add_handler(CallbackQueryHandler(telegram_handlers.handle_callback_query))
     # Добавьте другие обработчики здесь, если нужно
     logger.info("Handlers registered.")
