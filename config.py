@@ -56,9 +56,6 @@ if STREAMPAY_ENABLED:
 else:
     logger.warning("StreamPay payment system disabled - missing configuration")
 
-# --- Telegram Stars Payments ---
-TG_STARS_PROVIDER_TOKEN = get_config_value("TG_STARS_PROVIDER_TOKEN")
-
 # --- URL Configuration (derived from BASE_URL) ---
 BASE_URL = get_config_value("BASE_URL")
 logger.info(f"CONFIG.PY: Read BASE_URL = '{BASE_URL}'")
