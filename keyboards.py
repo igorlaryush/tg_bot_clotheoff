@@ -1,37 +1,59 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from localization import get_text, SUPPORTED_LANGUAGES # Импортируем строки и список языков
 import payments # Импортируем модуль платежей
+import config # Импортируем конфигурационный файл
+
+LANG_NAMES = {
+    "en": "English",
+    "ru": "Русский"
+}
+LANG_FLAGS = {
+    "en": "🇬🇧",
+    "ru": "🇷🇺"
+}
 
 # --- Опции для настроек (как в config.py или здесь) ---
-PROCESSING_OPTIONS = {
+APPEARANCE_OPTIONS = {
     "postprocessing": ["", "anime", "upscale"], # "" - не выбрано
     "age": ["", "18", "20", "30", "40", "50"],
     "breast_size": ["", "small", "normal", "big"],
     "body_type": ["", "skinny", "normal", "curvy", "muscular"],
     "butt_size": ["", "small", "normal", "big"],
+}
+
+SCENE_OPTIONS = {
     "pose": [ # Из картинки пользователя
-        "", "Blowjob", "Doggy Style", "Cumshot", "Cumshot POV", "Shower Room",
+        "Blowjob", "Doggy Style", "Cumshot", "Cumshot POV", "Shower Room",
         "Shibari", "Ahegao", "Ahegao cum", "Holding tits", "Missionary POV",
         "Cowgirl POV", "Anal Fuck", "Legs up presenting", "Spreading legs",
-        "Tit Fuck", "TGirl", "Tits On Glass", "Christmas", "Winter 1"
+        "Tit Fuck", "TGirl", "Tits On Glass", "Christmas", "Winter 1", "naked cum", 
+        "pregnant"
     ],
     "cloth": [ # Из картинки пользователя
-        "", "naked", "bikini", "lingerie", "sport wear", "bdsm", "latex",
-        "teacher", "schoolgirl", "bikini leopard", "naked cum", "naked tatoo",
-        "witch", "sexy witch", "sexy maid", "Christmas underwear", "pregnant",
+        "bikini", "lingerie", "sport wear", "bdsm", "latex",
+        "teacher", "schoolgirl", "bikini leopard",  "naked tatoo",
+        "witch", "sexy witch", "sexy maid", "Christmas underwear", 
         "cheerleader", "police", "secretary"
     ]
 }
 
+PROCESSING_OPTIONS = {**APPEARANCE_OPTIONS, **SCENE_OPTIONS}
+
 # --- Клавиатура выбора языка ---
 def get_language_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
-        # Можно добавить флаги или полные названия языков
-        [InlineKeyboardButton("English 🇬🇧", callback_data="set_lang:en")],
-        [InlineKeyboardButton("Русский 🇷🇺", callback_data="set_lang:ru")],
-        # Добавьте кнопки для других языков из SUPPORTED_LANGUAGES
+        [InlineKeyboardButton(f"{LANG_FLAGS['en']} {LANG_NAMES['en']}", callback_data="set_lang:en")],
+        [InlineKeyboardButton(f"{LANG_FLAGS['ru']} {LANG_NAMES['ru']}", callback_data="set_lang:ru")],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+# --- Клавиатура для постоянного меню ---
+def get_main_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    """Создает постоянную клавиатуру с кнопкой 'Меню'."""
+    keyboard = [
+        [KeyboardButton(get_text("menu_button", lang))]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # --- Клавиатура соглашения ---
 def get_agreement_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -44,58 +66,137 @@ def get_agreement_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 # --- Главное меню настроек ---
-def get_settings_main_keyboard(lang: str, current_options: dict) -> InlineKeyboardMarkup:
-    keyboard = []
+def get_settings_main_keyboard(lang: str) -> InlineKeyboardMarkup:
+    keyboard = [
+        # Кнопка смены языка
+        [InlineKeyboardButton(get_text("option_language", lang), callback_data="show_settings_option:language")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-    # Кнопка смены языка
-    keyboard.append([InlineKeyboardButton(get_text("option_language", lang), callback_data="show_settings_option:language")])
+# --- Клавиатура подменю настроек внешности (может быть использована и новым потоком) ---
+def get_appearance_settings_keyboard(lang: str, is_photo_flow: bool = False) -> InlineKeyboardMarkup:
+    keyboard = []
+    
+    base_callback = "photo_option" if is_photo_flow else "show_settings_option"
+    back_callback = "photo_back:main" if is_photo_flow else "back_to_settings:main"
 
     # Кнопки для опций обработки
-    for option_key in PROCESSING_OPTIONS.keys():
+    for option_key in APPEARANCE_OPTIONS.keys():
         option_name = get_text(f"option_{option_key}", lang) # Получаем локализованное имя опции
-        current_value = current_options.get(option_key, "")
-        display_value = current_value if current_value else get_text("option_not_set", lang)
+        display_value = get_text("option_not_set", lang)
         button_text = f"{option_name}: {display_value}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"show_settings_option:{option_key}")])
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"{base_callback}:{option_key}")])
+    
+    # Кнопка "Назад"
+    keyboard.append([
+        InlineKeyboardButton(get_text("back_button", lang), callback_data=back_callback),
+        InlineKeyboardButton(get_text("process_button", lang), callback_data="photo_action:process")
+    ])
 
     return InlineKeyboardMarkup(keyboard)
 
-
-# --- Клавиатура выбора значения для опции ---
-def get_option_value_keyboard(option_key: str, lang: str, current_value: str) -> InlineKeyboardMarkup:
+# --- Клавиатура выбора значения для опции (теперь только для языка) ---
+def get_option_value_keyboard(option_key: str, lang: str, current_lang: str) -> InlineKeyboardMarkup:
     keyboard = []
-    available_values = []
-
+    
     if option_key == 'language':
         available_values = SUPPORTED_LANGUAGES
         # Создаем кнопки для каждого языка
         for lang_code in available_values:
-            # Просто отображаем код языка или можно добавить флаги/полные названия
-            lang_name = lang_code.upper()
-            # Отмечаем текущий язык
-            prefix = "✅ " if lang_code == current_value else ""
-            keyboard.append([InlineKeyboardButton(f"{prefix}{lang_name}", callback_data=f"set_lang:{lang_code}")]) # Используем тот же callback что и при первом выборе
-    else:
-        available_values = PROCESSING_OPTIONS.get(option_key, [])
-        # Группируем кнопки по 2-3 в ряд для длинных списков
-        row = []
-        max_cols = 2 # Например, по 2 кнопки в ряд
-        for value in available_values:
-            display_text = value if value else get_text("value_not_set", lang) # Отображаем "Default" для пустого значения
-            prefix = "✅ " if value == current_value else ""
-            row.append(InlineKeyboardButton(f"{prefix}{display_text}", callback_data=f"set_setting:{option_key}:{value}"))
-            if len(row) == max_cols:
-                keyboard.append(row)
-                row = []
-        if row: # Добавляем оставшиеся кнопки, если их меньше max_cols
+            flag = LANG_FLAGS.get(lang_code, "")
+            name = LANG_NAMES.get(lang_code, lang_code.upper())
+            button_text = f"{flag} {name}".strip()
+
+            if lang_code == current_lang:
+                button_text = f"✅ {button_text}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"set_lang:{lang_code}")])
+
+    # Кнопка "Назад"
+    keyboard.append([
+        InlineKeyboardButton(get_text("back_button", lang), callback_data="back_to_start")
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+# === Клавиатуры для нового потока настройки фото ===
+
+def get_photo_settings_keyboard(lang: str, current_settings: dict) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для настройки параметров конкретного фото."""
+    keyboard = []
+    
+    # Кнопка для подменю внешности
+    keyboard.append([InlineKeyboardButton(
+        get_text("option_appearance", lang), 
+        callback_data="photo_submenu:appearance"
+    )])
+
+    # Кнопки для опций сцены (поза и одежда)
+    for option_key in SCENE_OPTIONS.keys():
+        option_name = get_text(f"option_{option_key}", lang)
+        button_text = f"{option_name}" # Теперь просто название опции
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"photo_option:{option_key}")])
+
+    return InlineKeyboardMarkup(keyboard)
+
+def get_photo_appearance_settings_keyboard(lang: str, current_settings: dict) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для подменю 'Внешность' в потоке настройки фото."""
+    keyboard = []
+
+    # Кнопки для опций внешности
+    for option_key in APPEARANCE_OPTIONS.keys():
+        option_name = get_text(f"option_{option_key}", lang)
+        value = current_settings.get(option_key)
+        
+        if value:
+            button_text = f"{option_name}: {value}"
+        else:
+            button_text = f"{option_name}"
+            
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"photo_option:{option_key}")])
+    
+    # Кнопка "Назад" в главное меню настроек фото
+    keyboard.append([
+        InlineKeyboardButton(get_text("back_button", lang), callback_data="photo_back:main"),
+        InlineKeyboardButton(get_text("process_button", lang), callback_data="photo_action:process")
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+def get_photo_option_value_keyboard(option_key: str, lang: str, current_settings: dict) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для выбора значения опции в потоке настройки фото."""
+    keyboard = []
+    available_values = PROCESSING_OPTIONS.get(option_key, [])
+    
+    # Группируем кнопки
+    row = []
+    max_cols = 2
+    for value in available_values:
+        # Для пустого значения ("") показываем локализованный текст
+        display_text = value if value else get_text("value_not_set", lang)
+        
+        if current_settings.get(option_key) == value:
+            display_text = f"✅ {display_text}"
+
+        row.append(InlineKeyboardButton(display_text, callback_data=f"photo_set:{option_key}:{value}"))
+        if len(row) == max_cols:
             keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
 
-        # Добавляем кнопку сброса, если есть текущее значение (не пустое)
-        if current_value:
-             keyboard.append([InlineKeyboardButton(get_text("reset_button", lang), callback_data=f"set_setting:{option_key}:")]) # Пустое значение для сброса
-
-    # Кнопка "Назад" в главное меню настроек
-    keyboard.append([InlineKeyboardButton(get_text("back_button", lang), callback_data="back_to_settings:main")])
+    # Кнопка "Назад" и "Обработать"
+    back_target = "appearance" if option_key in APPEARANCE_OPTIONS else "main"
+    
+    if option_key in APPEARANCE_OPTIONS.keys():
+        keyboard.append([
+            InlineKeyboardButton(get_text("back_button", lang), callback_data=f"photo_back:{back_target}"),
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(get_text("back_button", lang), callback_data=f"photo_back:{back_target}"),
+            InlineKeyboardButton(get_text("process_button", lang), callback_data="photo_action:process")
+        ])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -188,4 +289,40 @@ def get_payment_history_keyboard(lang: str, page: int = 0) -> InlineKeyboardMark
         callback_data="show_balance"
     )])
     
+    return InlineKeyboardMarkup(keyboard)
+
+# --- Клавиатура для команды /start ---
+def get_start_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для приветственного сообщения."""
+    keyboard = [
+        [InlineKeyboardButton(get_text("upload_photo_button", lang), callback_data="show_upload_prompt")],
+        [InlineKeyboardButton(get_text("buy_coins_button", lang), callback_data="show_packages")],
+        [
+            InlineKeyboardButton(get_text("option_language", lang), callback_data="show_settings_option:language"),
+            InlineKeyboardButton(get_text("my_channel_button", lang), url=config.TELEGRAM_CHANNEL_URL)
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# === New: keyboard offering choice of payment provider ===
+
+def get_payment_methods_keyboard(package_id: str, lang: str) -> InlineKeyboardMarkup:
+    """Creates a keyboard that lets the user choose how to pay for a package."""
+    keyboard = [
+        # Existing provider – StreamPay
+        [InlineKeyboardButton(
+            f"💳 {get_text('pay_with_streampay', lang)}",  # e.g. "Pay by card"
+            callback_data=f"pay_method:streampay:{package_id}"
+        )],
+        # New provider – Telegram Stars
+        [InlineKeyboardButton(
+            f"⭐️ {get_text('pay_with_tgstars', lang)}",  # e.g. "Pay with Telegram Stars"
+            callback_data=f"pay_method:tgstars:{package_id}"
+        )],
+        # Back button
+        [InlineKeyboardButton(
+            get_text("back_to_packages", lang),
+            callback_data="show_packages"
+        )]
+    ]
     return InlineKeyboardMarkup(keyboard)

@@ -8,6 +8,7 @@ packages:
       ru: "Идеально для знакомства с сервисом"
     photos: 5
     price: 300
+    stars_price: 220
     currency: "RUB"
     popular: false
     
@@ -20,6 +21,7 @@ packages:
       ru: "Отличное соотношение цены и качества"
     photos: 15
     price: 719
+    stars_price: 338
     currency: "RUB"
     popular: true
     
@@ -32,6 +34,7 @@ packages:
       ru: "Лучшее предложение для активных пользователей"
     photos: 50
     price: 1799
+    stars_price: 1322
     currency: "RUB"
     popular: false
     
@@ -44,5 +47,6 @@ packages:
       ru: "Безлимитная обработка на месяц"
     photos: 200
     price: 4499
+    stars_price: 3308
     currency: "RUB"
     popular: false 

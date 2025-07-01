@@ -245,6 +245,7 @@ def get_package_info(package_id: str, lang: str = 'ru') -> Optional[Dict[str, An
         'description': package['description'].get(lang, package['description']['en']),
         'photos': package['photos'],
         'price': package['price'],
+        'stars_price': package.get('stars_price'),
         'currency': package['currency'],
         'popular': package.get('popular', False)
     }

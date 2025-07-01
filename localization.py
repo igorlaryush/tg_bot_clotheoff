@@ -112,18 +112,78 @@ TEXTS = {
 
     # --- Старт и Помощь ---
     "start_message": {
-        "en": "Hello {user_name}! 👋\n\n**How to use the bot:**\n\n1️⃣ **Quick Start:** Simply send a photo with a person, and I'll process it with default settings!\n\n2️⃣ **Custom Processing:**\n- Use /settings to customize processing options\n- Send a photo after changing settings\n\n💰 **Important:** Make sure you have enough balance before processing photos. Use /balance to check and buy more photos.\n\n⚠️ **Disclaimer:** Use this bot responsibly and ethically.",
-        "ru": "Привет, {user_name}! 👋\n\n**Как пользоваться ботом:**\n\n1️⃣ **Быстрый старт:** Просто отправьте фото с человеком, и я обработаю его с настройками по умолчанию!\n\n2️⃣ **Настраиваемая обработка:**\n- Используйте /settings для настройки параметров обработки\n- Отправьте фото после изменения настроек\n\n💰 **Важно:** Убедитесь, что у вас достаточно баланса перед обработкой фото. Используйте /balance для проверки и покупки фото.\n\n⚠️ **Отказ от ответственности:** Используйте этого бота ответственно и этично.",
+        "en": """
+Welcome back, {user_name}!
+
+Your balance: 
+😎 {balance} coins
+
+1 coin = 1 generation.
+To top up your balance, press the 'Buy VIP coins' button.
+
+❗️ We respect our users' privacy, so photos and request history are not stored anywhere.
+        """,
+        "ru": """
+С возвращением, {user_name}!
+
+Ваш баланс:
+😎 {balance} монет.
+
+1 монета = 1 генерация.
+Для того, чтобы пополнить баланс, нажми кнопку 'Купить монеты'.
+
+❗️ Мы уважаем конфиденциальность наших пользователей, поэтому фотографии и история запросов нигде не хранятся.
+        """
+    },
+    "upload_photo_button": {
+        "en": "📷 Upload Photo",
+        "ru": "📷 Загрузить фото"
+    },
+    "buy_coins_button": {
+        "en": "💎 Buy coins",
+        "ru": "💎 Купить монеты"
+    },
+    "my_channel_button": {
+        "en": "My Channel",
+        "ru": "Наш канал"
+    },
+    "menu_button": {
+        "en": "Start",
+        "ru": "Меню"
+    },
+    "menu_activated": {
+        "en": "You can now use the 'Menu' button below to return here at any time.",
+        "ru": "Теперь вы можете использовать кнопку 'Меню' для возврата сюда в любое время."
+    },
+    "upload_photo_prompt": {
+        "en": """
+🤓 First, you need to upload a photo, here are a few simple rules:
+
+➖ There should be only one person in the photo;
+➖ The person should be in the center;
+➖ Better lighting and quality = better result;
+➖ Make sure clothes do not hide the body;
+🔒 We respect our users' privacy, so photos and request history are not stored anywhere.
+        """,
+        "ru": """
+🤓 Сначала вам нужно загрузить фотографию, вот несколько простых правил:
+
+➖ На фото должен быть только один человек;
+➖ Человек должен быть в центре;
+➖ Лучшее освещение и качество = лучший результат;
+➖ Убедитесь, что одежда не скрывает тело;
+🔒 Мы уважаем конфиденциальность наших пользователей, поэтому фотографии и история запросов нигде не хранятся.
+        """
     },
     "help_message": {
-        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your /settings.\n"
+        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your settings.\n"
               "You will receive the result back here once it's ready.\n\n"
               "**Important:**\n"
               "- Ensure the image clearly shows one person.\n"
               "- Processing can take some time.\n"
               "- Results depend on the API's capabilities.\n"
               "- Use responsibly.",
-        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим /settings.\n"
+        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим настройкам.\n"
               "Вы получите результат здесь, когда он будет готов.\n\n"
               "**Важно:**\n"
               "- Убедитесь, что на изображении четко виден один человек.\n"
@@ -170,12 +230,12 @@ TEXTS = {
         "ru": "🍑 Размер ягодиц",
     },
      "option_pose": {
-        "en": "🧘 Pose",
-        "ru": "🧘 Поза",
+        "en": "🧘 Sex positions",
+        "ru": "🧘 Секс позы",
     },
     "option_cloth": {
-        "en": "👙 Cloth",
-        "ru": "👙 Одежда",
+        "en": "👗 Costume",
+        "ru": "👗 Костюм",
     },
     "option_not_set": {
         "en": "Not set",
@@ -310,7 +370,99 @@ TEXTS = {
     "scheduled_notification_promo": {
         "en": "Want something more? The time has come 🥵\n\nCreate neurophotos with her face ACCORDING TO YOUR REQUEST, any desire of your imagination will be brought to life in just a few seconds\n\n1. Describe what should be in the photo using /settings.\n2. Send a high-quality photo of a person.\n3. Enjoy the results!",
         "ru": "Хочешь чего-то большего ? Время пришло 🥵\n\nСоздавай нейрофото с её лицом по СВОЕМУ ЗАПРОСУ, любое желания твоей фантазии будет воплощено в жизнь всего за не сколько секунд\n\n1. Опиши что должно быть на фото /settings. \n2. Отправь фото человека, в хорошем качестве.\n3. Наслаждайся результатами!",
-    }
+    },
+    "settings_intro": {
+        "en": "⚙️ *Settings*\\n\\nHere you can change the bot's language.",
+        "ru": "⚙️ *Настройки*\\n\\nЗдесь вы можете изменить язык бота."
+    },
+    "configure_photo_settings_title": {
+        "en": """
+❓ What would you like to do?
+
+1️⃣ Costume - See the girl in a sexy costume😏 
+
+2️⃣ Undress - Undressing with the ability to change body parameters
+
+3️⃣ Sex-pose - See the girl in a porn scene
+
+Press the button and enjoy 👇
+        """,
+        "ru": """
+❓ Что бы ты хотел сделать?
+
+1️⃣ Костюм - Посмотри на девушку в сексуальном костюме😏 
+
+2️⃣ Раздевание - Раздевание с возможностью изменения параметров тела
+
+3️⃣ Секс-поза - Посмотри на девушку в  порно сцене
+
+Нажмите кнопку и наслаждайтесь 👇
+        """
+    },
+    "process_button": {
+        "en": "✅ Process Photo",
+        "ru": "✅ Обработать фото"
+    },
+    "photo_processing_cancelled": {
+        "en": "Photo processing cancelled.",
+        "ru": "Обработка фото отменена."
+    },
+    "option_value_display": {
+        "en": "{option_name}: *{value}*",
+        "ru": "{option_name}: *{value}*"
+    },
+    "option_value_not_set": {
+        "en": "{option_name}: Not set",
+        "ru": "{option_name}: Не задано"
+    },
+    "select_option_title": {
+        "en": "Select a value for *{option_name}*:",
+        "ru": "Выберите значение для *{option_name}*:"
+    },
+    "settings_appearance_intro": {
+        "en": "🎨 *Appearance Settings*\n\nChoose how you want the generated person to look.",
+        "ru": "🎨 *Настройки внешности*\n\nВыберите, как будет выглядеть сгенерированный человек."
+    },
+    "settings_saved": {
+        "en": "✅ Settings saved!",
+        "ru": "✅ Настройки сохранены!"
+    },
+    "select_language": {
+        "en": "Please select your language:",
+        "ru": "Пожалуйста, выберите ваш язык:"
+    },
+    "select_postprocessing": {
+        "en": "Select a post-processing filter:",
+        "ru": "Выберите фильтр постобработки:"
+    },
+    "select_age": {
+        "en": "Select the desired age:",
+        "ru": "Выберите желаемый возраст:"
+    },
+    "select_breast_size": {
+        "en": "Select the desired breast size:",
+        "ru": "Выберите желаемый размер груди:"
+    },
+    "select_body_type": {
+        "en": "Select the desired body type:",
+        "ru": "Выберите желаемый тип телосложения:"
+    },
+    "select_butt_size": {
+        "en": "Select the desired butt size:",
+        "ru": "Выберите желаемый размер ягодиц:"
+    },
+    "option_appearance": {
+        "en": "👙 Undress",
+        "ru": "👙 Раздеть"
+    },
+    "pay_with_streampay": {
+        "en": "Pay by card",
+        "ru": "Оплата картой"
+    },
+    "pay_with_tgstars": {
+        "en": "Pay with Telegram Stars",
+        "ru": "Оплатить через Stars"
+    },
 }
 
 # --- Получение текста ---
@@ -340,3 +492,17 @@ def get_agreement_text(lang_code: str) -> str:
     if not lang_code:
         lang_code = DEFAULT_LANG
     return AGREEMENTS.get(lang_code, AGREEMENTS.get(DEFAULT_LANG, "Missing agreement text."))
+
+# --- Опции для настроек (как в config.py или здесь) ---
+APPEARANCE_OPTIONS = {
+    "settings_choose_option": "Please choose an option to configure:",
+    "settings_saved": "✅ Settings saved!",
+    "settings_appearance_intro": "🎨 *Appearance Settings*\n\nChoose how you want the generated person to look.",
+    "select_language": "Please select your language:",
+    "select_postprocessing": "Select a post-processing filter:",
+    "select_age": "Select the desired age:",
+    "option_pose": "Pose",
+    "option_cloth": "Cloth",
+    "option_appearance": "🎨 Appearance",
+    "value_not_set": "Not set",
+}

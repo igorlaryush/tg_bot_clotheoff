@@ -34,6 +34,7 @@ from telegram.ext import (
     filters,
     Application,
     CallbackQueryHandler,
+    PreCheckoutQueryHandler,
 )
 
 import config
@@ -41,6 +42,7 @@ import db
 import telegram_handlers
 import webhooks
 import queue_processor
+import localization
 
 # Логгер настраивается в config.py при импорте
 logger = logging.getLogger(__name__)
@@ -86,11 +88,17 @@ async def main():
         return
 
     logger.info("Registering handlers...")
+    # --- Create a regex filter for the menu button in all supported languages ---
+    menu_texts = [localization.get_text("menu_button", lang) for lang in config.SUPPORTED_LANGUAGES]
+    menu_filter = filters.TEXT & (filters.Regex(f'^({"|".join(menu_texts)})$'))
+
     ptb_app.add_handler(CommandHandler("start", telegram_handlers.start))
     ptb_app.add_handler(CommandHandler("help", telegram_handlers.help_command))
-    ptb_app.add_handler(CommandHandler("settings", telegram_handlers.settings_command))
     ptb_app.add_handler(CommandHandler("balance", telegram_handlers.balance_command))
     ptb_app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, telegram_handlers.handle_photo))
+    ptb_app.add_handler(MessageHandler(menu_filter, telegram_handlers.start))
+    ptb_app.add_handler(PreCheckoutQueryHandler(telegram_handlers.pre_checkout_handler))
+    ptb_app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, telegram_handlers.successful_payment_handler))
     ptb_app.add_handler(CallbackQueryHandler(telegram_handlers.handle_callback_query))
     # Добавьте другие обработчики здесь, если нужно
     logger.info("Handlers registered.")

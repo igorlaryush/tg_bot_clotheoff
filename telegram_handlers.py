@@ -3,8 +3,9 @@ import uuid
 from io import BytesIO
 import aiohttp
 from functools import wraps
+from datetime import datetime
 
-from telegram import Update, BotCommand, User, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand, User, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -91,7 +92,6 @@ async def setup_bot_commands(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.set_my_commands([
         BotCommand("start", "Start/Restart the bot"),
         BotCommand("help", "Show help message"),
-        BotCommand("settings", "Change language & processing options"),
         BotCommand("balance", "Check balance and buy photos"),
     ])
     logger.info("Bot commands updated.")
@@ -144,36 +144,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # User has agreed. Send welcome message in their stored language.
         user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-        welcome_message_text = get_text("start_message", user_lang).format(user_name=user.first_name)
-        try:
-            with open('images/welcome.png', 'rb') as photo:
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo,
-                    caption=welcome_message_text,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-        except FileNotFoundError:
-            import os
-            current_dir = os.getcwd()
-            logger.info(f"Current working directory: {current_dir}")
-            
-            # List all files in current directory
-            files = os.listdir(current_dir)
-            logger.info(f"Files in current directory: {files}")
-            
-            # Check if images directory exists and list its contents
-            images_dir = os.path.join(current_dir, 'images')
-            if os.path.exists(images_dir):
-                image_files = os.listdir(images_dir)
-                logger.info(f"Files in images directory: {image_files}")
-            else:
-                logger.error("Images directory not found")
-            logger.error("welcome.png not found. Sending only text message for /start.")
-            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
-        except Exception as e:
-            logger.error(f"Error sending welcome photo for /start: {e}")
-            await update.message.reply_text(welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+
+        # Send the persistent reply keyboard ONCE.
+        if not user_data.get("reply_keyboard_set"):
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=get_text("menu_activated", user_lang),
+                reply_markup=keyboards.get_main_reply_keyboard(user_lang)
+            )
+            await db.update_user_data(user.id, {"reply_keyboard_set": True})
+
+        current_balance = await db.get_user_photos_balance(user.id)
+        
+        welcome_message_text = get_text("start_message", user_lang).format(
+            user_name=user.first_name,
+            balance=current_balance
+        )
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=welcome_message_text,
+            reply_markup=keyboards.get_start_keyboard(user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 @require_agreement # Теперь /help требует согласия
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,188 +193,80 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
 
-@require_agreement # Обработка фото требует согласия
+@require_agreement
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles an incoming photo by starting a configuration session.
+    The actual processing is triggered by a callback button.
+    """
     if not update.message.photo:
         return
 
-    user_data = context.user_data['db_user'] # Получаем user_data из декоратора
+    # If there's already a photo session, cancel it before starting a new one.
+    if 'pending_photo_session' in context.user_data:
+        try:
+            config_message_id = context.user_data['pending_photo_session'].get('config_message_id')
+            if config_message_id:
+                user_lang_old = context.user_data['db_user'].get("language", config.DEFAULT_LANGUAGE)
+                await context.bot.edit_message_text(
+                    text=get_text("photo_processing_cancelled", user_lang_old),
+                    chat_id=update.effective_chat.id,
+                    message_id=config_message_id,
+                    reply_markup=None
+                )
+        except Exception as e:
+            logger.warning(f"Could not edit old config message on new photo upload: {e}")
+        finally:
+            del context.user_data['pending_photo_session']
+
+    user_data = context.user_data['db_user']
     user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
     user_id = user_data['user_id']
-    chat_id = user_data['chat_id']
     message_id = update.message.message_id
 
-    logger.info(f"Processing photo from user_id: {user_id} with lang: {user_lang}")
-
-    # Проверяем баланс пользователя
+    # Check balance before even starting configuration
     current_balance = await db.get_user_photos_balance(user_id)
     if current_balance < 1:
-        # Недостаточно средств - показываем сообщение и предлагаем купить
         await update.message.reply_text(
             get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
             reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
             reply_to_message_id=message_id
         )
-        # Логируем попытку генерации при недостаточном балансе
         await db.log_user_event(user_id, "generation_attempt_insufficient_balance", {"current_balance": current_balance})
         return
 
-    photo_file = None
-    id_gen = None
+    # Store photo info and initialize empty settings for this session
+    photo = update.message.photo[-1]
+    context.user_data['pending_photo_session'] = {
+        'file_id': photo.file_id,
+        'message_id': message_id,
+        'settings': {},
+        'config_message_id': None, # To be stored after sending the keyboard
+        'is_photo_message': True   # Flag to indicate the config message has a photo
+    }
+
+    logger.info(f"Starting photo configuration session for user {user_id}")
+
+    # Send the configuration keyboard
     try:
-        photo = update.message.photo[-1]
-        photo_file = await context.bot.get_file(photo.file_id)
+        with open('images/configure_photo.jpg', 'rb') as photo_to_send:
+            config_message = await update.message.reply_photo(
+                photo=photo_to_send,
+                caption=get_text("configure_photo_settings_title", user_lang),
+                reply_markup=keyboards.get_photo_settings_keyboard(user_lang, {}),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    except FileNotFoundError:
+        logger.warning("configure_photo.jpg not found. Sending text-only config message.")
+        config_message = await update.message.reply_text(
+            text=get_text("configure_photo_settings_title", user_lang),
+            reply_markup=keyboards.get_photo_settings_keyboard(user_lang, {}),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    # Save the message ID of the configuration menu so we can edit it
+    context.user_data['pending_photo_session']['config_message_id'] = config_message.message_id
 
-        photo_bytes_io = BytesIO()
-        await photo_file.download_to_memory(photo_bytes_io)
-        photo_bytes_io.seek(0)
-        photo_bytes = photo_bytes_io.read()
-
-        if not photo_bytes:
-            logger.warning(f"Could not download photo bytes for file_id: {photo.file_id}")
-            await update.message.reply_text(get_text("photo_download_error", user_lang), reply_to_message_id=message_id)
-            return
-
-        # Списываем фото с баланса перед отправкой на обработку
-        deduct_success = await db.deduct_user_photos(user_id, 1)
-        if not deduct_success:
-            logger.error(f"Failed to deduct photo from user {user_id} balance")
-            await update.message.reply_text(get_text("error_occurred", user_lang), reply_to_message_id=message_id)
-            return
-
-        id_gen = str(uuid.uuid4())
-        bot_state.pending_requests[id_gen] = {"chat_id": chat_id, "user_id": user_id, "message_id": message_id, "lang": user_lang} # Сохраняем язык
-        logger.info(f"Generated id_gen: {id_gen} for user {user_id}. Pending requests: {len(bot_state.pending_requests)}")
-
-        # Логируем событие начала генерации
-        await db.log_user_event(user_id, "generation_requested", {"id_gen": id_gen})
-
-        # --- Подготовка данных для API, включая опции ---
-        data = aiohttp.FormData()
-        data.add_field('image', photo_bytes, filename=f'{id_gen}.jpg', content_type='image/jpeg')
-        data.add_field('id_gen', id_gen)
-        data.add_field('webhook', config.CLOTHOFF_RECEIVER_URL)
-
-        # Добавляем опции обработки из user_data
-        processing_options = user_data.get('processing_options', {})
-        api_options_sent = {}
-        for key, value in processing_options.items():
-            if value: # Добавляем только если значение не пустое/не дефолтное
-                data.add_field(key, str(value)) # Убедимся что значение строковое
-                api_options_sent[key] = value
-
-        if api_options_sent:
-             logger.info(f"Sending processing options for id_gen {id_gen}: {api_options_sent}")
-
-        headers = {'x-api-key': config.CLOTHOFF_API_KEY, 'accept': 'application/json'}
-
-        status_message = await update.message.reply_text(get_text("processing_photo", user_lang), reply_to_message_id=message_id)
-        bot_state.pending_requests[id_gen]["status_message_id"] = status_message.message_id
-
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(config.CLOTHOFF_API_URL, data=data, headers=headers) as response:
-                response_text = await response.text()
-                logger.debug(f"API Raw Response ({response.status}) for id_gen {id_gen}: {response_text[:500]}") # Log first 500 chars
-
-                if response.status == 200:
-                    logger.info(f"API call successful for id_gen {id_gen}. Waiting for webhook.")
-                    # Статус не меняем, пользователь ждет результат. pending_requests очистится в queue_processor
-                else: # API ответило с ошибкой
-                    logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text[:200]}")
-                    await db.add_user_photos(user_id, 1) # Возвращаем фото
-                    if id_gen in bot_state.pending_requests: del bot_state.pending_requests[id_gen]
-                    
-                    error_details = response_text[:100] 
-                    # status_message должно быть определено здесь, т.к. API вызов был сделан
-                    await context.bot.edit_message_text(
-                        get_text("api_error", user_lang).format(status=response.status, details=error_details),
-                        chat_id=chat_id,
-                        message_id=status_message.message_id
-                    )
-                    return # Завершаем обработку здесь, т.к. ошибка API обработана
-
-    except aiohttp.ClientError as e: # Сетевая ошибка (таймаут, недоступность сервера и т.д.)
-        logger.error(f"API request ClientError for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
-        # Фото было списано до этого блока try-except (если id_gen существует)
-        if id_gen: # Если id_gen был сгенерирован, значит фото списано
-            await db.add_user_photos(user_id, 1) 
-            status_message_id_to_edit = None
-            if id_gen in bot_state.pending_requests:
-                status_message_id_to_edit = bot_state.pending_requests[id_gen].get("status_message_id")
-                del bot_state.pending_requests[id_gen]
-            
-            if status_message_id_to_edit:
-                await context.bot.edit_message_text(
-                    get_text("network_error", user_lang), 
-                    chat_id=chat_id, 
-                    message_id=status_message_id_to_edit
-                )
-            else: # Сообщение "в обработке" не было отправлено или не найдено, но ошибка произошла
-                await update.message.reply_text(get_text("network_error", user_lang), reply_to_message_id=message_id)
-        else: # Ошибка произошла до генерации id_gen и списания фото (маловероятно здесь, но для полноты)
-            await update.message.reply_text(get_text("network_error", user_lang), reply_to_message_id=message_id)
-        return
-
-    except Exception as e: # Любая другая непредвиденная ошибка
-        logger.exception(f"Unexpected error in photo handling for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
-        if id_gen: # Если id_gen был сгенерирован, значит фото списано
-            await db.add_user_photos(user_id, 1)
-            status_message_id_to_edit = None
-            if id_gen in bot_state.pending_requests:
-                status_message_id_to_edit = bot_state.pending_requests[id_gen].get("status_message_id")
-                del bot_state.pending_requests[id_gen]
-
-            if status_message_id_to_edit:
-                await context.bot.edit_message_text(
-                    get_text("unexpected_processing_error", user_lang), 
-                    chat_id=chat_id, 
-                    message_id=status_message_id_to_edit
-                )
-            else: # Сообщение "в обработке" не было отправлено или не найдено
-                 await update.message.reply_text(get_text("unexpected_processing_error", user_lang), reply_to_message_id=message_id)
-        else: # Ошибка до id_gen
-            await update.message.reply_text(get_text("unexpected_processing_error", user_lang), reply_to_message_id=message_id)
-        return
-
-# --- Настройки ---
-@require_agreement
-async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data = context.user_data['db_user']
-    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
-    current_options = user_data.get("processing_options", {})
-    # chat_id = update.effective_chat.id # No longer needed directly here as we use update.message.reply_text
-
-    text = f"{get_text('settings_title', user_lang)}\n\n"
-    text += get_text("settings_choose_option", user_lang)
-
-    # try:
-    #     with open('images/settings.png', 'rb') as photo:
-    #         await context.bot.send_photo(
-    #             chat_id=chat_id,
-    #             photo=photo,
-    #             caption=text,
-    #             reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-    #         )
-    # except FileNotFoundError:
-    #     logger.error("settings.png not found. Sending only text message for /settings.")
-    #     await update.message.reply_text(
-    #         text=text,
-    #         reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-    #     )
-    # except Exception as e:
-    #     logger.error(f"Error sending settings photo for /settings: {e}")
-    #     await update.message.reply_text(
-    #         text=text,
-    #         reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-    #     )
-    
-    await update.message.reply_text(
-        text=text,
-        reply_markup=keyboards.get_settings_main_keyboard(user_lang, current_options)
-    )
-
-# --- Обработчик Callback Query (нажатия кнопок) ---
+# --- Обработчик всех inline-кнопок ---
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -401,36 +286,153 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     current_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
     initial_selection_phase = context.user_data.pop('initial_lang_selection', False) # Check and clear flag
 
+    # --- Photo Configuration Flow ---
+    if callback_data.startswith("photo_"):
+        if 'pending_photo_session' not in context.user_data:
+            await query.edit_message_text(get_text("error_occurred", current_lang))
+            logger.warning(f"User {user.id} interacted with a photo callback, but no session was found.")
+            return
+        
+        session = context.user_data['pending_photo_session']
+        current_settings = session.get('settings', {})
+        action, *params = callback_data.split(':')
+
+        async def edit_or_replace(text, reply_markup, parse_mode=None):
+            """Deletes the photo message and sends a new text one on first interaction."""
+            if session.get('is_photo_message'):
+                await query.delete_message()
+                new_message = await context.bot.send_message(
+                    chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
+                session['config_message_id'] = new_message.message_id
+                session['is_photo_message'] = False
+            else:
+                try:
+                    await query.edit_message_text(
+                        text=text, reply_markup=reply_markup, parse_mode=parse_mode
+                    )
+                except BadRequest as e:
+                    if "Message is not modified" in str(e):
+                        pass # Ignore if the message content is the same
+                    else:
+                        logger.error(f"Failed to edit photo config message: {e}")
+                        raise e
+
+        if action == "photo_submenu":
+            submenu_key = params[0]
+            if submenu_key == "appearance":
+                await edit_or_replace(
+                    text=get_text("settings_appearance_intro", current_lang),
+                    reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
+                )
+
+        elif action == "photo_option":
+            option_key = params[0]
+            await edit_or_replace(
+                text=get_text("select_option_title", current_lang).format(option_name=get_text(f"option_{option_key}", current_lang)),
+                reply_markup=keyboards.get_photo_option_value_keyboard(option_key, current_lang, current_settings),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        
+        elif action == "photo_set":
+            option_key, value = params
+            
+            # If the user clicks the same option, un-set it. Otherwise, set it.
+            if current_settings.get(option_key) == value:
+                current_settings.pop(option_key, None)
+            else:
+                current_settings[option_key] = value
+
+            if option_key in keyboards.APPEARANCE_OPTIONS:
+                # Return to the appearance submenu
+                await edit_or_replace(
+                    text=get_text("settings_appearance_intro", current_lang),
+                    reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
+                )
+            else:
+                # Re-render the same value selection screen to show the updated checkmark
+                await edit_or_replace(
+                    text=get_text("select_option_title", current_lang).format(option_name=get_text(f"option_{option_key}", current_lang)),
+                    reply_markup=keyboards.get_photo_option_value_keyboard(option_key, current_lang, current_settings),
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+
+        elif action == "photo_back":
+            target_menu = params[0]
+            if target_menu == "main":
+                await edit_or_replace(
+                    text=get_text("configure_photo_settings_title", current_lang),
+                    reply_markup=keyboards.get_photo_settings_keyboard(current_lang, current_settings),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            elif target_menu == "appearance":
+                 await edit_or_replace(
+                    text=get_text("settings_appearance_intro", current_lang),
+                    reply_markup=keyboards.get_photo_appearance_settings_keyboard(current_lang, current_settings)
+                )
+        
+        elif action == "photo_action":
+            sub_action = params[0]
+            if sub_action == "process":
+                # Delete the configuration message
+                await query.delete_message()
+                # Run the processing logic
+                await _execute_photo_processing(update, context, current_settings)
+        return
+
+    # --- Upload Photo Prompt ---
+    if callback_data == "show_upload_prompt":
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+        
+        try:
+            with open('images/upload_guide.mp4', 'rb') as video:
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=video,
+                    caption=get_text("upload_photo_prompt", user_lang)
+                )
+        except FileNotFoundError:
+             logger.warning("Video file 'upload_guide.mp4' not found. Sending text prompt only.")
+             await query.message.reply_text(get_text("upload_photo_prompt", user_lang))
+        except Exception as e:
+             logger.error(f"Failed to send video prompt: {e}")
+             await query.message.reply_text(get_text("upload_photo_prompt", user_lang)) # Fallback on other errors
+        
+        return
+
     # --- Language Selection (set_lang:en, set_lang:ru) ---
     if callback_data.startswith("set_lang:"):
         chosen_lang = callback_data.split(":")[1]
-        
-        # Update language in DB and local user_data
-        if chosen_lang != user_data.get("language"):
-            success = await db.update_user_data(user.id, {"language": chosen_lang})
-            if success:
-                user_data["language"] = chosen_lang
-                current_lang = chosen_lang # Update for current context
-                await query.edit_message_text(get_text("language_set", chosen_lang))
-            else:
-                await query.edit_message_text(get_text("error_occurred", current_lang))
-                # Re-set flag if DB update failed during initial phase to allow retry
-                if initial_selection_phase:
-                     context.user_data['initial_lang_selection'] = True
-                return
-        else:
-            # Language already set to this, just edit message to confirm and remove old keyboard
-            await query.edit_message_text(get_text("language_set", chosen_lang))
 
-        if initial_selection_phase:
-            # Coming from /start, now show agreement in chosen language
-            await send_agreement_prompt(update, context, user_data)
-        else:
-            # Language changed from settings. The settings menu should be refreshed by user action (e.g. "Back" button)
-            # or specific logic in settings flow if message needs to be auto-updated.
-            # For now, just confirming the language set is sufficient here.
-            # The 'show_settings_option:language' will display choices, and its 'Back' button handles return.
-            pass
+        db_update_needed = chosen_lang != user_data.get("language")
+        success = True # Assume success if no DB update is needed
+
+        if db_update_needed:
+            success = await db.update_user_data(user.id, {"language": chosen_lang})
+
+        if success:
+            user_data["language"] = chosen_lang # Update local state
+
+            if initial_selection_phase:
+                # New user flow: show agreement next
+                await send_agreement_prompt(update, context, user_data)
+            else:
+                # Existing user flow: show updated start menu directly
+                current_balance = await db.get_user_photos_balance(user.id)
+                welcome_message_text = get_text("start_message", chosen_lang).format(
+                    user_name=user.first_name,
+                    balance=current_balance
+                )
+                await query.edit_message_text(
+                    text=welcome_message_text,
+                    reply_markup=keyboards.get_start_keyboard(chosen_lang),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+        else: # DB update failed
+            await query.edit_message_text(get_text("error_occurred", current_lang))
+            if initial_selection_phase:
+                context.user_data['initial_lang_selection'] = True # Allow retry
+        
         return
 
     # --- Agreement Handling (accept_terms:true, decline_terms:true) ---
@@ -475,7 +477,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     # --- Agreement is True, proceed with other callbacks ---
     context.user_data['db_user'] = user_data # For require_agreement decorator and other handlers
-    current_options = user_data.get("processing_options", {})
 
     # --- Payment Callbacks Handling (Example, ensure your function exists and is called correctly) ---
     payment_callbacks_prefixes = ("buy_package:", "confirm_purchase:", "payment_history_page:")
@@ -487,56 +488,134 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
              await handle_payment_callbacks(update, context, callback_data, user_data, query)
         return
 
-
-    # --- Settings Callbacks Handling (Linter errors addressed here) ---
-    if callback_data == "back_to_settings:main" or callback_data == "settings_main": # Added settings_main for direct entry if used
-        await query.edit_message_text(
-            text=get_text("settings_choose_option", current_lang),
-            reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options)
-        )
+    # --- Language selection (from /start) ---
     elif callback_data.startswith("show_settings_option:"):
         option_key = callback_data.split(":")[1]
-        option_name_display = get_text(f"option_{option_key}", current_lang)
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
         
-        value_for_keyboard = current_options.get(option_key, "")
         if option_key == 'language':
-             value_for_keyboard = current_lang # For language, current_value is the current language
+            # This now opens the language selection keyboard
+             await query.edit_message_text(
+                text=get_text("select_language", user_lang),
+                reply_markup=keyboards.get_option_value_keyboard(
+                    option_key=option_key,
+                    lang=user_lang,
+                    current_lang=user_lang
+                )
+            )
 
-        await query.edit_message_text(
-            text=get_text("choose_value_for", current_lang).format(option_name=option_name_display),
-            reply_markup=keyboards.get_option_value_keyboard(option_key, current_lang, value_for_keyboard) # Corrected function name
+    # --- Back to Start Menu (from language selection) ---
+    elif callback_data == "back_to_start":
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+        current_balance = await db.get_user_photos_balance(user.id)
+        welcome_message_text = get_text("start_message", user_lang).format(
+            user_name=user.first_name,
+            balance=current_balance
         )
-    
-    elif callback_data.startswith("set_setting:"): # For general settings, not language
-        parts = callback_data.split(":", 2)
-        option_key = parts[1]
-        new_value_str = parts[2]
+        await query.edit_message_text(
+            text=welcome_message_text,
+            reply_markup=keyboards.get_start_keyboard(user_lang),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
-        current_options[option_key] = new_value_str
-        
-        success = await db.update_user_data(user.id, {"processing_options": current_options})
-        if success:
-            user_data["processing_options"] = current_options # Update local
-            confirm_text = get_text("setting_updated", current_lang).format(
-                option_name=get_text(f"option_{option_key}", current_lang), 
-                value=new_value_str if new_value_str else get_text("value_not_set", current_lang)
-            )
-            # Refresh main settings view
-            await query.edit_message_text(
-                text=f"{confirm_text}\n\n{get_text('settings_choose_option', current_lang)}",
-                reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options)
-            )
+    # --- Обработка кнопок ПЛАТЕЖЕЙ ---
+    # (Перенесено в отдельную функцию для чистоты)
+    elif "buy_package" in callback_data or \
+         "confirm_purchase" in callback_data or \
+         "payment_history_page" in callback_data or \
+         callback_data in ["show_packages", "show_balance", "show_payment_history", "cancel_payment", "back_to_main"]:
+        if hasattr(payments, 'handle_payment_callbacks'): # Assuming you might move this
+             await payments.handle_payment_callbacks(update, context, callback_data, user_data, query)
+        else: # Fallback to local one if not moved
+             await handle_payment_callbacks(update, context, callback_data, user_data, query)
+        return
+
+    # --- Payment method selection ---
+    elif callback_data.startswith("pay_method:"):
+        # Format: pay_method:<method>:<package_id>
+        _, method, package_id = callback_data.split(":", 2)
+        user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+
+        package_info = payments.get_package_info(package_id, user_lang)
+        if not package_info:
+            await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
+            return
+
+        if method == "streampay":
+            # Reuse existing flow to create StreamPay invoice (previously in confirm_purchase)
+            await query.edit_message_text(text=get_text("creating_payment", user_lang))
+            order_data = await payments.create_payment_order(user_data['user_id'], package_id)
+            if order_data:
+                text = get_text("payment_link_created", user_lang).format(
+                    package_name=package_info['name'],
+                    amount=package_info['price']
+                )
+                keyboard = [[InlineKeyboardButton(
+                    get_text("pay_now", user_lang),
+                    url=order_data['pay_url']
+                )]]
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await query.edit_message_text(text=get_text("payment_error", user_lang))
+            return
+
+        elif method == "tgstars":
+            # Attempt to create Telegram Stars invoice directly via send_invoice
+            
+            star_amount = int(package_info.get('stars_price') or package_info['price'])
+            if star_amount <= 0:
+                logger.error(f"Invalid star amount for package {package_id}: {star_amount}")
+                await query.edit_message_text(text=get_text("payment_error", user_lang))
+                return
+
+            payload = f"tgstars_{user.id}_{package_id}_{uuid.uuid4().hex[:8]}"
+
+            # Save pending order in DB (status pending) BEFORE sending invoice to link later update
+            order_data = {
+                "external_id": payload,
+                "user_id": user.id,
+                "package_id": package_id,
+                "invoice_id": None,
+                "amount": star_amount,
+                "currency": "XTR",
+                "photos_count": package_info['photos'],
+                "status": "pending",
+                "created_at": datetime.utcnow(),
+                "pay_url": None,
+                "method": "tgstars"
+            }
+            await db.create_payment_order(order_data)
+
+            # Replace message with invoice (Telegram will create a new message automatically)
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+            except Exception:
+                pass  # Ignore if can't delete
+
+            try:
+                await context.bot.send_invoice(
+                    chat_id=chat_id,
+                    title=package_info['name'],
+                    description=package_info['description'],
+                    payload=payload,
+                    provider_token='',  # Empty for Stars
+                    currency='XTR',
+                    prices=[LabeledPrice(package_info['name'], star_amount)],
+                    start_parameter="tgstars_payment"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send TG Stars invoice: {e}")
+                await context.bot.send_message(chat_id, get_text("payment_error", user_lang))
+            return
+
         else:
-            await query.edit_message_text(get_text("error_occurred", current_lang))
-    
-    # Removed "reset_all_settings" as it was causing linter errors with get_settings_main_keyboard
-    # and its direct implementation needs review based on how PROCESSING_OPTIONS defaults are handled.
-    # A "reset to default" for each option is present in get_option_value_keyboard (empty value).
-    # If a global reset is needed, it should pass current_options={} to get_settings_main_keyboard.
-    # For example, a new callback "reset_all_processing_options" could do:
-    # current_options = {}
-    # await db.update_user_data(user.id, {"processing_options": current_options})
-    # await query.edit_message_text(text=..., reply_markup=keyboards.get_settings_main_keyboard(current_lang, current_options))
+            logger.warning(f"Unknown payment method selected: {method}")
+            await context.bot.send_message(chat_id, get_text("error_occurred", user_lang))
+            return
 
     else:
         logger.warning(f"Unhandled agreed callback_data: {callback_data} from user {user.id}")
@@ -601,12 +680,10 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         package_info = payments.get_package_info(package_id, user_lang)
         
         if package_info:
-            # Логируем событие инициации платежа
-            await db.log_user_event(user_id, "payment_initiated", {
+            # Логируем событие выбора пакета (еще без выбора метода оплаты)
+            await db.log_user_event(user_id, "payment_package_selected", {
                 "package_id": package_id,
                 "package_name": package_info.get('name'),
-                "package_price": package_info.get('price'),
-                "package_photos": package_info.get('photos')
             })
 
             text = get_text("package_details", user_lang).format(
@@ -618,7 +695,7 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
             try:
                 await query.edit_message_text(
                     text=text,
-                    reply_markup=keyboards.get_payment_confirmation_keyboard(package_id, user_lang),
+                    reply_markup=keyboards.get_payment_methods_keyboard(package_id, user_lang),
                     parse_mode=ParseMode.MARKDOWN
                 )
             except BadRequest as e:
@@ -639,7 +716,7 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(text=get_text("creating_payment", user_lang))
         
         # Создаем заказ на оплату
-        order_data = await payments.create_payment_order(user_id, package_id)
+        order_data = await payments.create_payment_order(user_data['user_id'], package_id)
         
         if order_data:
             # Успешно создали заказ - показываем ссылку на оплату
@@ -775,3 +852,194 @@ async def notify_payment_success(user_id: int, package_name: str, photos_added: 
         
     except Exception as e:
         logger.error(f"Failed to prepare payment notification for user {user_id}: {e}")
+
+async def _execute_photo_processing(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    processing_options: dict
+):
+    """
+    Handles the actual API call for photo processing.
+    Assumes balance has been checked and deducted.
+    """
+    if 'pending_photo_session' not in context.user_data:
+        logger.error("execute_photo_processing called without a pending photo session.")
+        return
+
+    session_data = context.user_data.get('pending_photo_session', {})
+    photo_file_id = session_data.get('file_id')
+    original_message_id = session_data.get('message_id')
+
+    if not photo_file_id or not original_message_id:
+        logger.error(f"Missing photo_file_id or original_message_id in session for user {update.effective_user.id}")
+        return
+
+    user_data = context.user_data.get('db_user', {})
+    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+    user_id = user_data.get('user_id')
+    chat_id = user_data.get('chat_id')
+
+    if not all([user_data, user_lang, user_id, chat_id]):
+        logger.error(f"Missing user data in context for photo processing for user {update.effective_user.id}")
+        return
+        
+    id_gen = None
+    try:
+        # First, deduct the photo from balance.
+        deduct_success = await db.deduct_user_photos(user_id, 1)
+        if not deduct_success:
+            logger.error(f"Failed to deduct photo from user {user_id} balance before processing.")
+            # Notify user that deduction failed
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=get_text("error_occurred", user_lang),
+                reply_to_message_id=original_message_id
+            )
+            return
+
+        # Let the user know we are starting
+        status_message = await context.bot.send_message(
+            chat_id,
+            text=get_text("processing_photo", user_lang),
+            reply_to_message_id=original_message_id
+        )
+
+        photo_file = await context.bot.get_file(photo_file_id)
+        photo_bytes_io = BytesIO()
+        await photo_file.download_to_memory(photo_bytes_io)
+        photo_bytes_io.seek(0)
+        photo_bytes = photo_bytes_io.read()
+
+        if not photo_bytes:
+            logger.warning(f"Could not download photo bytes for file_id: {photo_file_id}")
+            await status_message.edit_text(get_text("photo_download_error", user_lang))
+            await db.add_user_photos(user_id, 1) # Refund
+            return
+
+        id_gen = str(uuid.uuid4())
+        bot_state.pending_requests[id_gen] = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "message_id": original_message_id, # So webhook can reply to original photo
+            "status_message_id": status_message.message_id,
+            "lang": user_lang
+        }
+        logger.info(f"Generated id_gen: {id_gen} for user {user_id}. Pending requests: {len(bot_state.pending_requests)}")
+
+        await db.log_user_event(user_id, "generation_requested", {"id_gen": id_gen, "options": processing_options})
+
+        data = aiohttp.FormData()
+        data.add_field('image', photo_bytes, filename=f'{id_gen}.jpg', content_type='image/jpeg')
+        data.add_field('id_gen', id_gen)
+        data.add_field('webhook', config.CLOTHOFF_RECEIVER_URL)
+        
+        # Add processing options to the request
+        for key, value in processing_options.items():
+            if value: # Only send non-empty values
+                data.add_field(key, str(value))
+
+        # Log the request details before sending
+        log_payload = {
+            "id_gen": id_gen,
+            "webhook": config.CLOTHOFF_RECEIVER_URL,
+            "image_size": len(photo_bytes),
+            **processing_options
+        }
+        logger.info(f"Sending request to Clothoff API for id_gen {id_gen}. Payload: {log_payload}")
+
+        headers = {'x-api-key': config.CLOTHOFF_API_KEY, 'accept': 'application/json'}
+
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(config.CLOTHOFF_API_URL, data=data, headers=headers) as response:
+                response_text = await response.text()
+                logger.debug(f"API Raw Response ({response.status}) for id_gen {id_gen}: {response_text[:500]}")
+
+                if response.status == 200:
+                    logger.info(f"API call successful for id_gen {id_gen}. Waiting for webhook.")
+                    await status_message.edit_text(get_text("photo_sent_for_processing", user_lang))
+                else:
+                    logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text[:200]}")
+                    await db.add_user_photos(user_id, 1) # Refund
+                    if id_gen in bot_state.pending_requests: del bot_state.pending_requests[id_gen]
+                    
+                    error_details = response_text[:100]
+                    await status_message.edit_text(
+                        get_text("api_error", user_lang).format(status=response.status, details=error_details)
+                    )
+
+    except aiohttp.ClientError as e:
+        logger.error(f"API request ClientError for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
+        if id_gen: await db.add_user_photos(user_id, 1) # Refund
+        if id_gen and id_gen in bot_state.pending_requests:
+            status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
+            del bot_state.pending_requests[id_gen]
+            if status_message_id:
+                await context.bot.edit_message_text(
+                    get_text("network_error", user_lang), chat_id=chat_id, message_id=status_message_id
+                )
+    except Exception as e:
+        logger.exception(f"Unexpected error in photo processing for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
+        if id_gen: await db.add_user_photos(user_id, 1) # Refund
+        if id_gen and id_gen in bot_state.pending_requests:
+            status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
+            del bot_state.pending_requests[id_gen]
+            if status_message_id:
+                await context.bot.edit_message_text(
+                    get_text("unexpected_processing_error", user_lang), chat_id=chat_id, message_id=status_message_id
+                )
+    finally:
+        if 'pending_photo_session' in context.user_data:
+            del context.user_data['pending_photo_session']
+
+@require_agreement
+async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles successful payments coming from Telegram Stars provider."""
+    payment = update.message.successful_payment
+    if not payment:
+        return
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Parse payload, expected: tgstars_<user_id>_<package_id>_<random>
+    payload_parts = payment.invoice_payload.split("_")
+    if len(payload_parts) < 3:
+        logger.error(f"Unexpected invoice payload format: {payment.invoice_payload}")
+        return
+
+    _prefix, payload_user_id, package_id, *_ = payload_parts
+    if str(user.id) != payload_user_id:
+        logger.warning(f"Payload user ID {payload_user_id} does not match sender {user.id}")
+
+    user_data = await db.get_or_create_user(user.id, chat_id, user.username, user.first_name)
+    user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
+
+    # Update order in DB
+    external_id = payment.invoice_payload
+    order = await db.get_payment_order_by_external_id(external_id)
+    if order and order.get("status") != "success":
+        update_data = {
+            "status": "success",
+            "updated_at": datetime.utcnow(),
+            "telegram_payment_charge_id": payment.telegram_payment_charge_id,
+            "provider_payment_charge_id": payment.provider_payment_charge_id,
+        }
+        await db.update_payment_order(external_id, update_data)
+        # Credit photos
+        photos_to_add = order["photos_count"] if order else 0
+        if photos_to_add:
+            await db.add_user_photos(user.id, photos_to_add)
+        new_balance = await db.get_user_photos_balance(user.id)
+        await notify_payment_success(user.id, order["package_id"], photos_to_add, new_balance)
+    else:
+        logger.info(f"Payment order already processed or not found for payload {external_id}")
+
+# === Telegram Stars pre-checkout ===
+async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Approves every pre_checkout_query (required for Stars)."""
+    query = update.pre_checkout_query
+    try:
+        await query.answer(ok=True)
+    except Exception as e:
+        logger.error(f"Failed to answer pre_checkout_query: {e}")
