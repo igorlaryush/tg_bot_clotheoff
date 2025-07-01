@@ -113,7 +113,7 @@ TEXTS = {
     # --- Старт и Помощь ---
     "start_message": {
         "en": """
-Welcome back, {user_name}!
+Welcome, {user_name}!
 
 Your balance: 
 😎 {balance} coins
@@ -124,7 +124,7 @@ To top up your balance, press the 'Buy VIP coins' button.
 ❗️ We respect our users' privacy, so photos and request history are not stored anywhere.
         """,
         "ru": """
-С возвращением, {user_name}!
+Привет, {user_name}!
 
 Ваш баланс:
 😎 {balance} монет.
@@ -157,22 +157,28 @@ To top up your balance, press the 'Buy VIP coins' button.
     },
     "upload_photo_prompt": {
         "en": """
-🤓 First, you need to upload a photo, here are a few simple rules:
+🤓 Now you can upload a photo, here are a few simple rules:
 
 ➖ There should be only one person in the photo;
 ➖ The person should be in the center;
 ➖ Better lighting and quality = better result;
 ➖ Make sure clothes do not hide the body;
-🔒 We respect our users' privacy, so photos and request history are not stored anywhere.
+
+🔒 We respect our users' privacy, so photos are not stored anywhere.
+
+📎 Now send your photo.
         """,
         "ru": """
-🤓 Сначала вам нужно загрузить фотографию, вот несколько простых правил:
+🤓 Теперь можете загрузить фотографию, вот несколько простых правил:
 
 ➖ На фото должен быть только один человек;
 ➖ Человек должен быть в центре;
 ➖ Лучшее освещение и качество = лучший результат;
 ➖ Убедитесь, что одежда не скрывает тело;
-🔒 Мы уважаем конфиденциальность наших пользователей, поэтому фотографии и история запросов нигде не хранятся.
+
+🔒 Мы уважаем конфиденциальность наших пользователей, поэтому не храним фотографии и историю запросов.
+
+📎 Теперь отправьте ваше фото.
         """
     },
     "help_message": {

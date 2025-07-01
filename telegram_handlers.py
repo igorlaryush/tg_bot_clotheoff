@@ -443,19 +443,28 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
         success = await db.update_user_data(user.id, {"agreed_to_terms": True, "language": lang_to_save})
         if success:
-            user_data["agreed_to_terms"] = True # Update local copy
-            await query.edit_message_text(get_text("agreement_accepted", lang_to_save))
-            
-            welcome_message_text = get_text("start_message", lang_to_save).format(user_name=user.first_name)
+            user_data["agreed_to_terms"] = True  # Update local copy
+
+            # Удаляем сообщение с соглашением, чтобы скрыть кнопки
             try:
-                with open('images/welcome.png', 'rb') as photo:
-                    await context.bot.send_photo(chat_id=chat_id, photo=photo, caption=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+                await query.delete_message()
+            except Exception:
+                pass  # Не критично, если не получилось удалить
+
+            # Мгновенно показываем пользователю подсказку по загрузке фото (как при нажатии «📷 Upload Photo»)
+            try:
+                with open('images/upload_guide.mp4', 'rb') as video:
+                    await context.bot.send_video(
+                        chat_id=chat_id,
+                        video=video,
+                        caption=get_text("upload_photo_prompt", lang_to_save)
+                    )
             except FileNotFoundError:
-                logger.error("welcome.png not found. Sending text message after agreement.")
-                await context.bot.send_message(chat_id=chat_id, text=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+                logger.warning("Video file 'upload_guide.mp4' not found. Sending text prompt only.")
+                await context.bot.send_message(chat_id, get_text("upload_photo_prompt", lang_to_save))
             except Exception as e:
-                logger.error(f"Error sending welcome photo after agreement: {e}")
-                await context.bot.send_message(chat_id=chat_id, text=welcome_message_text, parse_mode=ParseMode.MARKDOWN)
+                logger.error(f"Failed to send upload prompt: {e}")
+                await context.bot.send_message(chat_id, get_text("upload_photo_prompt", lang_to_save))
         else:
             await query.edit_message_text(get_text("error_occurred", lang_to_save))
         return
