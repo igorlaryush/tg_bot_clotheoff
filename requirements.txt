@@ -12,3 +12,4 @@ debugpy
 PyNaCl>=1.5.0  # For StreamPay signature verification
 PyYAML>=6.0    # For payment packages configuration
 httpx>=0.24.0  # For async HTTP requests to StreamPay API
+Pillow>=10.0.0  # For image blurring in preview mode

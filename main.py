@@ -93,8 +93,6 @@ async def main():
     menu_filter = filters.TEXT & (filters.Regex(f'^({"|".join(menu_texts)})$'))
 
     ptb_app.add_handler(CommandHandler("start", telegram_handlers.start))
-    ptb_app.add_handler(CommandHandler("help", telegram_handlers.help_command))
-    ptb_app.add_handler(CommandHandler("balance", telegram_handlers.balance_command))
     ptb_app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, telegram_handlers.handle_photo))
     ptb_app.add_handler(MessageHandler(menu_filter, telegram_handlers.start))
     ptb_app.add_handler(PreCheckoutQueryHandler(telegram_handlers.pre_checkout_handler))

@@ -91,8 +91,6 @@ async def setup_bot_commands(context: ContextTypes.DEFAULT_TYPE):
     """Sets the bot commands."""
     await context.bot.set_my_commands([
         BotCommand("start", "Start/Restart the bot"),
-        BotCommand("help", "Show help message"),
-        BotCommand("balance", "Check balance and buy photos"),
     ])
     logger.info("Bot commands updated.")
 
@@ -223,17 +221,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = user_data.get("language", config.DEFAULT_LANGUAGE)
     user_id = user_data['user_id']
     message_id = update.message.message_id
-
-    # Check balance before even starting configuration
-    current_balance = await db.get_user_photos_balance(user_id)
-    if current_balance < 1:
-        await update.message.reply_text(
-            get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
-            reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
-            reply_to_message_id=message_id
-        )
-        await db.log_user_event(user_id, "generation_attempt_insufficient_balance", {"current_balance": current_balance})
-        return
 
     # Store photo info and initialize empty settings for this session
     photo = update.message.photo[-1]
@@ -675,13 +662,26 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
     # Показать пакеты для покупки
     if callback_data == "show_packages":
         text = get_text("choose_package", user_lang)
-        try:
-            await query.edit_message_text(
+
+        # Если исходное сообщение содержит фото (например, размытую превью-картинку),
+        # не трогаем его, а отправляем НОВОЕ сообщение со списком пакетов.
+        # В остальных случаях (обычное текстовое меню) можно по-прежнему править сообщение.
+        if query.message.photo:
+            await context.bot.send_message(
+                chat_id=chat_id,
                 text=text,
                 reply_markup=keyboards.get_payment_packages_keyboard(user_lang)
             )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): raise e
+            await query.answer()  # Закрываем анимацию "Loading" у пользователя
+        else:
+            try:
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang)
+                )
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise e
 
     # Выбор конкретного пакета
     elif callback_data.startswith("buy_package:"):
@@ -894,17 +894,37 @@ async def _execute_photo_processing(
         
     id_gen = None
     try:
-        # First, deduct the photo from balance.
-        deduct_success = await db.deduct_user_photos(user_id, 1)
-        if not deduct_success:
-            logger.error(f"Failed to deduct photo from user {user_id} balance before processing.")
-            # Notify user that deduction failed
-            await context.bot.send_message(
-                chat_id=chat_id, 
-                text=get_text("error_occurred", user_lang),
-                reply_to_message_id=original_message_id
-            )
-            return
+        # --- Баланс и списание фото ---
+        current_balance = await db.get_user_photos_balance(user_id)
+        preview_mode = False
+        if current_balance < 1:
+            # Разрешаем ОДИН бесплатный превью если это первая обработка пользователя
+            if user_data.get("photos_processed", 0) == 0:
+                preview_mode = True  # Позволяем обработку без списания
+                logger.info(f"User {user_id} is allowed a free preview processing.")
+            else:
+                # Сообщаем о недостатке средств и предлагаем купить пакет
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
+                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
+                    reply_to_message_id=original_message_id
+                )
+                await db.log_user_event(user_id, "generation_attempt_insufficient_balance", {"current_balance": current_balance})
+                return
+
+        # Если это не превью, списываем фото
+        if not preview_mode:
+            deduct_success = await db.deduct_user_photos(user_id, 1)
+            if not deduct_success:
+                logger.error(f"Failed to deduct photo from user {user_id} balance before processing (race condition?).")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
+                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
+                    reply_to_message_id=original_message_id
+                )
+                return
 
         # Let the user know we are starting
         status_message = await context.bot.send_message(
@@ -931,7 +951,8 @@ async def _execute_photo_processing(
             "user_id": user_id,
             "message_id": original_message_id, # So webhook can reply to original photo
             "status_message_id": status_message.message_id,
-            "lang": user_lang
+            "lang": user_lang,
+            "preview": preview_mode
         }
         logger.info(f"Generated id_gen: {id_gen} for user {user_id}. Pending requests: {len(bot_state.pending_requests)}")
 
@@ -969,7 +990,8 @@ async def _execute_photo_processing(
                     await status_message.edit_text(get_text("photo_sent_for_processing", user_lang))
                 else:
                     logger.error(f"API error for id_gen {id_gen}: Status {response.status}, Response: {response_text[:200]}")
-                    await db.add_user_photos(user_id, 1) # Refund
+                    if not preview_mode:
+                        await db.add_user_photos(user_id, 1)  # Refund
                     if id_gen in bot_state.pending_requests: del bot_state.pending_requests[id_gen]
                     
                     error_details = response_text[:100]
@@ -979,7 +1001,8 @@ async def _execute_photo_processing(
 
     except aiohttp.ClientError as e:
         logger.error(f"API request ClientError for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
-        if id_gen: await db.add_user_photos(user_id, 1) # Refund
+        if id_gen and not preview_mode:
+            await db.add_user_photos(user_id, 1)  # Refund
         if id_gen and id_gen in bot_state.pending_requests:
             status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
             del bot_state.pending_requests[id_gen]
@@ -989,7 +1012,8 @@ async def _execute_photo_processing(
                 )
     except Exception as e:
         logger.exception(f"Unexpected error in photo processing for user {user_id}, id_gen {id_gen if id_gen else 'N/A'}: {e}")
-        if id_gen: await db.add_user_photos(user_id, 1) # Refund
+        if id_gen and not preview_mode:
+            await db.add_user_photos(user_id, 1)  # Refund
         if id_gen and id_gen in bot_state.pending_requests:
             status_message_id = bot_state.pending_requests[id_gen].get("status_message_id")
             del bot_state.pending_requests[id_gen]

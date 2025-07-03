@@ -116,10 +116,10 @@ TEXTS = {
 Welcome, {user_name}!
 
 Your balance: 
-😎 {balance} coins
+💎 {balance} coins
 
 1 coin = 1 generation.
-To top up your balance, press the 'Buy VIP coins' button.
+To top up your balance, press the 'Buy coins' button.
 
 ❗️ We respect our users' privacy, so photos and request history are not stored anywhere.
         """,
@@ -127,7 +127,7 @@ To top up your balance, press the 'Buy VIP coins' button.
 Привет, {user_name}!
 
 Ваш баланс:
-😎 {balance} монет.
+💎 {balance} монет.
 
 1 монета = 1 генерация.
 Для того, чтобы пополнить баланс, нажми кнопку 'Купить монеты'.
@@ -157,7 +157,7 @@ To top up your balance, press the 'Buy VIP coins' button.
     },
     "upload_photo_prompt": {
         "en": """
-🤓 Now you can upload a photo, here are a few simple rules:
+🤓 You can upload a photo, here are a few simple rules:
 
 ➖ There should be only one person in the photo;
 ➖ The person should be in the center;
@@ -169,7 +169,7 @@ To top up your balance, press the 'Buy VIP coins' button.
 📎 Now send your photo.
         """,
         "ru": """
-🤓 Теперь можете загрузить фотографию, вот несколько простых правил:
+🤓 Можете загрузить фотографию, вот несколько простых правил:
 
 ➖ На фото должен быть только один человек;
 ➖ Человек должен быть в центре;
@@ -182,19 +182,17 @@ To top up your balance, press the 'Buy VIP coins' button.
         """
     },
     "help_message": {
-        "en": "Send me a photo with a person in it. I will send it to the API for processing based on your settings.\n"
+        "en": "Send me a photo with a person in it. I process it based on your settings.\n"
               "You will receive the result back here once it's ready.\n\n"
               "**Important:**\n"
               "- Ensure the image clearly shows one person.\n"
               "- Processing can take some time.\n"
-              "- Results depend on the API's capabilities.\n"
               "- Use responsibly.",
-        "ru": "Отправьте мне фото с человеком. Я отправлю его в API для обработки согласно вашим настройкам.\n"
+        "ru": "Отправьте мне фото с человеком. Я обработаю его согласно вашим настройкам.\n"
               "Вы получите результат здесь, когда он будет готов.\n\n"
               "**Важно:**\n"
               "- Убедитесь, что на изображении четко виден один человек.\n"
               "- Обработка может занять некоторое время.\n"
-              "- Результаты зависят от возможностей API.\n"
               "- Используйте ответственно.",
     },
 
@@ -278,16 +276,16 @@ To top up your balance, press the 'Buy VIP coins' button.
         "ru": "💰 Ваш баланс",
     },
     "current_balance": {
-        "en": "Current balance: {balance} photos",
-        "ru": "Текущий баланс: {balance} фото",
+        "en": "Current balance: {balance} edits",
+        "ru": "Текущий баланс: {balance} обработок",
     },
     "insufficient_balance": {
-        "en": "❌ Insufficient balance! You need {needed} photos, but you have only {current}.\n\nPlease purchase more photos to continue.",
-        "ru": "❌ Недостаточно средств! Вам нужно {needed} фото, а у вас только {current}.\n\nПожалуйста, купите больше фото для продолжения.",
+        "en": "❌ Insufficient balance! You need {needed} edits, but you have only {current}.\n\nPlease purchase more edits to continue.",
+        "ru": "❌ Недостаточно средств! Вам нужно {needed} обработок, а у вас только {current}.\n\nПожалуйста, купите больше обработок для продолжения.",
     },
     "buy_photos": {
-        "en": "💳 Buy Photos",
-        "ru": "💳 Купить фото",
+        "en": "\uD83D\uDCB3 Buy edits",
+        "ru": "\uD83D\uDCB3 Купить обработки",
     },
     "payment_history": {
         "en": "📋 Payment History",
@@ -298,8 +296,8 @@ To top up your balance, press the 'Buy VIP coins' button.
         "ru": "Выберите пакет для покупки:",
     },
     "package_details": {
-        "en": "📦 **{name}**\n\n{description}\n\n💎 Photos: {photos}\n💰 Price: {price} ₽\n\nConfirm your purchase?",
-        "ru": "📦 **{name}**\n\n{description}\n\n💎 Фото: {photos}\n💰 Цена: {price} ₽\n\nПодтвердить покупку?",
+        "en": "📦 **{name}**\n\n{description}\n\n💎 Edits: {photos}\n💰 Price: {price} ₽\n\nConfirm your purchase?",
+        "ru": "📦 **{name}**\n\n{description}\n\n💎 Обработок: {photos}\n💰 Цена: {price} ₽\n\nПодтвердить покупку?",
     },
     "confirm_purchase": {
         "en": "✅ Confirm Purchase",
@@ -330,8 +328,8 @@ To top up your balance, press the 'Buy VIP coins' button.
         "ru": "❌ Ошибка создания платежа. Попробуйте позже.",
     },
     "payment_success": {
-        "en": "✅ **Payment Successful!**\n\nYou have purchased: {package_name}\nPhotos added: {photos}\nNew balance: {new_balance} photos\n\nThank you for your purchase!",
-        "ru": "✅ **Платеж успешен!**\n\nВы купили: {package_name}\nДобавлено фото: {photos}\nНовый баланс: {new_balance} фото\n\nСпасибо за покупку!",
+        "en": "✅ **Payment Successful!**\n\nYou have purchased: {package_name}\nEdits added: {photos}\nNew balance: {new_balance} edits\n\nThank you for your purchase!",
+        "ru": "✅ **Платеж успешен!**\n\nВы купили: {package_name}\nДобавлено обработок: {photos}\nНовый баланс: {new_balance} обработок\n\nСпасибо за покупку!",
     },
     "payment_failed": {
         "en": "❌ Payment failed. Please try again or contact support.",
@@ -412,6 +410,10 @@ Press the button and enjoy 👇
     "photo_processing_cancelled": {
         "en": "Photo processing cancelled.",
         "ru": "Обработка фото отменена."
+    },
+    "preview_payment_required": {
+        "en": "🔒 Almost ready! Pay to get the unblurred version.",
+        "ru": "🔒 Почти готово! Оплатите, чтобы получить фото без размытия."
     },
     "option_value_display": {
         "en": "{option_name}: *{value}*",
