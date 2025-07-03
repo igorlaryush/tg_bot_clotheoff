@@ -2,6 +2,9 @@ import logging
 import asyncio
 from telegram.ext import Application
 from telegram.error import TelegramError
+from io import BytesIO
+from PIL import Image, ImageFilter
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import bot_state # Очередь и ожидающие запросы
 import db        # Функции БД
@@ -52,21 +55,50 @@ async def process_results_queue(app: Application):
             # --- Отправка результата пользователю ---
             try:
                 if status == '200' and image_data:
-                    logger.info(f"Sending processed image for id_gen {id_gen} to chat_id {chat_id} (user: {user_id})")
-                    # --- Используем локализованный caption ---
-                    if processing_time:
-                         caption = get_text("result_caption", user_lang).format(id_gen=id_gen[:8], time=processing_time) # Сокращаем ID в ответе
-                    else:
-                         caption = get_text("result_caption_no_time", user_lang).format(id_gen=id_gen[:8])
+                    if request_info.get("preview"):
+                        # Создаем размытую версию
+                        try:
+                            img = Image.open(BytesIO(bytes(image_data)))
+                            # JPEG не поддерживает альфа-канал, конвертируем в RGB при необходимости
+                            if img.mode in ("RGBA", "LA", "P"):
+                                img = img.convert("RGB")
+                            img = img.filter(ImageFilter.GaussianBlur(radius=20))
+                            buf = BytesIO()
+                            img.save(buf, format="JPEG")
+                            buf.seek(0)
+                            blurred_bytes = buf.read()
+                        except Exception as blur_err:
+                            logger.error(f"Failed to blur preview image for id_gen {id_gen}: {blur_err}")
+                            blurred_bytes = bytes(image_data)  # fallback to original
 
-                    await app.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=bytes(image_data),
-                        caption=caption,
-                        reply_to_message_id=original_message_id # Отвечаем на исходное сообщение
-                    )
-                    # Инкрементируем счетчик после *успешной* отправки
-                    await db.increment_user_counter(user_id, "photos_processed")
+                        caption = get_text("preview_payment_required", user_lang)
+                        keyboard = [[InlineKeyboardButton(get_text("buy_photos", user_lang), callback_data="show_packages")]]
+
+                        await app.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=blurred_bytes,
+                            caption=caption,
+                            reply_to_message_id=original_message_id,
+                            reply_markup=InlineKeyboardMarkup(keyboard)
+                        )
+                        # Не увеличиваем photos_processed здесь – сделаем это отдельно после оплаты/или можно увеличить сразу чтобы запретить повторное превью
+                        await db.increment_user_counter(user_id, "photos_processed")
+                    else:
+                        logger.info(f"Sending processed image for id_gen {id_gen} to chat_id {chat_id} (user: {user_id})")
+                        # --- Используем локализованный caption ---
+                        if processing_time:
+                            caption = get_text("result_caption", user_lang).format(id_gen=id_gen[:8], time=processing_time)
+                        else:
+                            caption = get_text("result_caption_no_time", user_lang).format(id_gen=id_gen[:8])
+
+                        await app.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=bytes(image_data),
+                            caption=caption,
+                            reply_to_message_id=original_message_id
+                        )
+                        # Инкрементируем счетчик после *успешной* отправки
+                        await db.increment_user_counter(user_id, "photos_processed")
 
                     # Удаляем сообщение "Processing..."
                     if status_message_id:

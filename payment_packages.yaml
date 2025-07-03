@@ -14,8 +14,8 @@ packages:
     
   basic:
     name:
-      en: "Basic Pack"
-      ru: "Базовый пакет"
+      en: "Basic Pack <-- Popular choice"
+      ru: "Базовый пакет <-- ПОПУЛЯРНЫЙ ВЫБОР"
     description:
       en: "Great value for regular use"
       ru: "Отличное соотношение цены и качества"
