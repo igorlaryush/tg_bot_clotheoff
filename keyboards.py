@@ -2,6 +2,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from localization import get_text, SUPPORTED_LANGUAGES # Импортируем строки и список языков
 import payments # Импортируем модуль платежей
 import config # Импортируем конфигурационный файл
+import discounts  # new module for personal discounts
+
+# helper to add strike-through to a string (using unicode combining char U+0336)
+def _strike(text: str) -> str:
+    return ''.join(ch + '\u0336' for ch in text)
 
 LANG_NAMES = {
     "en": "English",
@@ -202,30 +207,48 @@ def get_photo_option_value_keyboard(option_key: str, lang: str, current_settings
 
 # === Клавиатуры для платежей ===
 
-def get_payment_packages_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """Создает клавиатуру с доступными пакетами для покупки."""
-    keyboard = []
+# async version supporting personal discounts
+async def get_payment_packages_keyboard(lang: str, user_id: int | None = None) -> InlineKeyboardMarkup:
+    """Creates a keyboard with available packages, adjusting price by user-specific discounts."""
+    keyboard: list[list[InlineKeyboardButton]] = []
+
     packages = payments.get_all_packages(lang)
-    
+
     for package_id, package_info in packages.items():
-        if package_info:
-            # Формируем текст кнопки
-            popular_mark = "🔥 " if package_info.get('popular') else ""
-            unit_word = "обработок" if lang == "ru" else "edits"
-            button_text = f"{popular_mark}{package_info['name']}"
-            button_text += f"\n{package_info['photos']} {unit_word} - {package_info['price']} ₽"
-            
-            keyboard.append([InlineKeyboardButton(
-                button_text, 
+        if not package_info:
+            continue
+
+        orig_price = package_info["price"]
+        price = orig_price
+        if user_id is not None:
+            disc = await discounts.get_active_discount(user_id, package_id)
+            price = await discounts.price_with_discount(price, disc)
+
+        popular_mark = "🔥 " if package_info.get("popular") else ""
+        unit_word = "обработок" if lang == "ru" else "edits"
+        button_text = f"{popular_mark}{package_info['name']}"
+        if price < orig_price:
+            old = _strike(f"{orig_price} ₽")
+            button_text += f"\n{package_info['photos']} {unit_word} - {old} → {price} ₽"
+        else:
+            button_text += f"\n{package_info['photos']} {unit_word} - {price} ₽"
+        button_text += f"\n{package_info['popular_postfix']}"
+
+        keyboard.append([
+            InlineKeyboardButton(
+                button_text,
                 callback_data=f"buy_package:{package_id}"
-            )])
-    
-    # Кнопка "Назад" или "Отмена"
-    keyboard.append([InlineKeyboardButton(
-        get_text("back_button", lang), 
-        callback_data="cancel_payment"
-    )])
-    
+            )
+        ])
+
+    # Back / cancel button
+    keyboard.append([
+        InlineKeyboardButton(
+            get_text("back_button", lang),
+            callback_data="cancel_payment"
+        )
+    ])
+
     return InlineKeyboardMarkup(keyboard)
 
 def get_payment_confirmation_keyboard(package_id: str, lang: str) -> InlineKeyboardMarkup:

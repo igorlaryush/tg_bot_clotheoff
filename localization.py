@@ -295,6 +295,10 @@ To top up your balance, press the 'Buy coins' button.
         "en": "Choose a package to purchase:",
         "ru": "Выберите пакет для покупки:",
     },
+    "choose_package_discount": {
+        "en": "🎁 You have a personal {percent}% discount! Choose a package:",
+        "ru": "🎁 У вас персональная скидка {percent}%! Выберите пакет:",
+    },
     "package_details": {
         "en": "📦 **{name}**\n\n{description}\n\n💎 Edits: {photos}\n💰 Price: {price} ₽\n\nConfirm your purchase?",
         "ru": "📦 **{name}**\n\n{description}\n\n💎 Обработок: {photos}\n💰 Цена: {price} ₽\n\nПодтвердить покупку?",
@@ -372,8 +376,8 @@ To top up your balance, press the 'Buy coins' button.
         "ru": "💰 Баланс",
     },
     "scheduled_notification_promo": {
-        "en": "Want something more? The time has come 🥵\n\nCreate neurophotos with her face ACCORDING TO YOUR REQUEST, any desire of your imagination will be brought to life in just a few seconds\n\n1. Describe what should be in the photo using /settings.\n2. Send a high-quality photo of a person.\n3. Enjoy the results!",
-        "ru": "Хочешь чего-то большего ? Время пришло 🥵\n\nСоздавай нейрофото с её лицом по СВОЕМУ ЗАПРОСУ, любое желания твоей фантазии будет воплощено в жизнь всего за не сколько секунд\n\n1. Опиши что должно быть на фото /settings. \n2. Отправь фото человека, в хорошем качестве.\n3. Наслаждайся результатами!",
+        "en": "We noticed an issue with Stream Pay payments. If you paid through Stream Pay but haven't received your photo edits, please contact support - they will verify and credit any missing edits to your account.",
+        "ru": "Заметили ошибку с платежами через stream pay, если вы оплатили через stream pay, но обработки вам так и не начислились, то просьба написатьв поддержку, там все проверят и начислят вам недостающие обработки",
     },
     "settings_intro": {
         "en": "⚙️ *Settings*\\n\\nHere you can change the bot's language.",

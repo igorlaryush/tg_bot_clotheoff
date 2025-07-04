@@ -312,5 +312,126 @@ def setup_routes(ptb_app: Application):
             logger.exception(f"Scheduler: Error during send_notifications_handler: {e}")
             return jsonify({"error": "Internal Server Error while processing notifications"}), 500
 
+    @flask_app.route('/scheduler/issue_discounts', methods=['POST'])
+    async def scheduler_issue_discounts():
+        """Cloud Scheduler endpoint: evaluates discount policies and issues user discounts."""
+
+        # Simple token-based auth (reuse SCHEDULER_SECRET_TOKEN)
+        if request.headers.get('X-Scheduler-Token') != getattr(config, 'SCHEDULER_SECRET_TOKEN', None):
+            logger.warning("Unauthorized access to /scheduler/issue_discounts")
+            return jsonify({"error": "Unauthorized"}), 401
+
+        if not db.db:
+            logger.error("Firestore not initialised in issue_discounts")
+            return jsonify({"error": "DB not ready"}), 503
+
+        from datetime import datetime, timedelta, timezone
+        import discounts
+        from zoneinfo import ZoneInfo
+
+        issued = 0
+        try:
+            policy_docs = await db.db.collection("discount_policies").get()
+            for pdoc in policy_docs:
+                policy = pdoc.to_dict()
+                if not policy:
+                    continue
+
+                policy_id = pdoc.id
+                rule_type = policy.get("rule_type")
+                pkg_ids = policy.get("target_package_ids") or [policy.get("target_package_id")]
+                discount_percent = policy.get("discount_percent", 0)
+                valid_hours = policy.get("valid_hours", 24)
+
+                if rule_type == "pending_payment":
+                    # users with pending payment for ANY package
+                    orders = await db.db.collection("payment_orders")\
+                        .where("status", "==", "pending").get()
+                    for o in orders:
+                        od = o.to_dict()
+                        user_id = od.get("user_id")
+                        if not user_id:
+                            continue
+                         # skip if user already has active discount
+                        existing = await discounts.get_active_discount(user_id)
+                        if existing:
+                            continue
+
+                        expires_at = datetime.now(timezone.utc) + timedelta(hours=valid_hours)
+                        ok = await discounts.save_user_discount(user_id, policy_id, "percentage", discount_percent, expires_at, pkg_ids)
+                        if ok:
+                            issued += 1
+                            # notify user about discount
+                            try:
+                                user = await db.get_or_create_user(user_id, None)
+                                user_lang = user.get("language", "ru") if user else "ru"
+                                pkg_name = payments.get_package_info(pkg_ids[0], user_lang).get("name") if pkg_ids and payments.get_package_info(pkg_ids[0], user_lang) else "package"
+                                msk = ZoneInfo("Europe/Moscow")
+                                exp_str = expires_at.astimezone(msk).strftime('%d.%m %H:%M')
+                                msg = (f"🎁 У вас персональная скидка {discount_percent}% на пакет {pkg_name}! Скидка действует до {exp_str}." if user_lang == "ru"
+                                       else f"🎁 You have a personal {discount_percent}% discount on the {pkg_name} package! Valid until {exp_str}.")
+                                chat_id = user.get("chat_id") if user else None
+                                if chat_id:
+                                    await ptb_app.bot.send_message(chat_id=chat_id, text=msg)
+                            except Exception as nn_err:
+                                logger.warning("Failed to notify user %s about new discount: %s", user_id, nn_err)
+
+            logger.info("Scheduler issued %s discounts", issued)
+            return jsonify({"issued": issued}), 200
+        except Exception as e:
+            logger.exception("Error issuing discounts: %s", e)
+            return jsonify({"error": "Internal error"}), 500
+
+    @flask_app.route('/scheduler/notify_discount_expiry', methods=['POST'])
+    async def scheduler_notify_discount_expiry():
+        """Cloud Scheduler endpoint: reminds users 1h before discount expiry."""
+
+        if request.headers.get('X-Scheduler-Token') != getattr(config, 'SCHEDULER_SECRET_TOKEN', None):
+            return jsonify({"error": "Unauthorized"}), 401
+
+        if ptb_app is None:
+            return jsonify({"error": "Bot not ready"}), 503
+
+        import discounts
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        soon = now + timedelta(hours=1)
+        notified = 0
+        try:
+            docs = await db.db.collection("user_discounts")\
+                .where("reminderSent", "==", False)\
+                .where("expiresAt", "<=", soon)\
+                .where("expiresAt", ">=", now).get()
+
+            for doc in docs:
+                data = doc.to_dict()
+                user_id = int(doc.id)
+                chat_id = await _get_chat_id_for_user(user_id)
+                if not chat_id:
+                    continue
+                pkg_id = data.get("targetPackageId")
+                disc_percent = data.get("discountValue")
+
+                user_lang = (await db.get_or_create_user(user_id, chat_id)).get("language", "ru")
+                msg = (f"⚠️ {disc_percent}% скидка на пакет {pkg_id} истекает через час!" if user_lang == "ru"
+                       else f"⚠️ Your {disc_percent}% discount on package {pkg_id} expires in 1 hour!")
+
+                try:
+                    await ptb_app.bot.send_message(chat_id=chat_id, text=msg)
+                    await discounts.mark_reminder_sent(user_id)
+                    notified += 1
+                except Exception as e:
+                    logger.warning("Failed to send discount expiry notification to %s: %s", user_id, e)
+
+            return jsonify({"notified": notified}), 200
+        except Exception as e:
+            logger.exception("Error notifying discount expiry: %s", e)
+            return jsonify({"error": "Internal error"}), 500
+
+    async def _get_chat_id_for_user(user_id: int):
+        user_data = await db.get_or_create_user(user_id, None)
+        return user_data.get("chat_id") if user_data else None
+
     # Возвращаем настроенное приложение Flask
     return flask_app

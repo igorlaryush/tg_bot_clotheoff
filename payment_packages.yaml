@@ -14,16 +14,19 @@ packages:
     
   basic:
     name:
-      en: "Basic Pack <-- Popular choice"
-      ru: "Базовый пакет <-- ПОПУЛЯРНЫЙ ВЫБОР"
+      en: "Basic Pack"
+      ru: "Базовый пакет"
     description:
       en: "Great value for regular use"
       ru: "Отличное соотношение цены и качества"
-    photos: 15
+    photos: 15 
     price: 719
-    stars_price: 338
+    stars_price: 5
     currency: "RUB"
     popular: true
+    popular_postfix:
+      en: " <-- Popular choice"
+      ru: " <-- ПОПУЛЯРНЫЙ ВЫБОР"
     
   premium:
     name:

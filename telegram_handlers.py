@@ -16,6 +16,7 @@ import bot_state # Импортируем глобальное состояни�
 import keyboards # Импорт клавиатур
 from localization import get_text, get_agreement_text # Импорт текстов
 import payments  # Импортируем модуль для работы с платежами
+import discounts # Импортируем модуль для работы со скидками
 
 logger = logging.getLogger(__name__)
 
@@ -540,11 +541,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if method == "streampay":
             # Reuse existing flow to create StreamPay invoice (previously in confirm_purchase)
             await query.edit_message_text(text=get_text("creating_payment", user_lang))
-            order_data = await payments.create_payment_order(user_data['user_id'], package_id)
+            # apply discount
+            disc = await discounts.get_active_discount(user_data['user_id'], package_id)
+            orig_price = package_info['price']
+            discounted_price = await discounts.price_with_discount(orig_price, disc)
+            order_data = await payments.create_payment_order(user_data['user_id'], package_id, price_override=discounted_price)
             if order_data:
                 text = get_text("payment_link_created", user_lang).format(
                     package_name=package_info['name'],
-                    amount=package_info['price']
+                    amount=discounted_price
                 )
                 keyboard = [[InlineKeyboardButton(
                     get_text("pay_now", user_lang),
@@ -562,7 +567,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         elif method == "tgstars":
             # Attempt to create Telegram Stars invoice directly via send_invoice
             
-            star_amount = int(package_info.get('stars_price') or package_info['price'])
+            disc = await discounts.get_active_discount(user_data['user_id'], package_id)
+            star_base = int(package_info.get('stars_price') or package_info['price'])
+            star_amount = await discounts.price_with_discount(star_base, disc)
+
             if star_amount <= 0:
                 logger.error(f"Invalid star amount for package {package_id}: {star_amount}")
                 await query.edit_message_text(text=get_text("payment_error", user_lang))
@@ -661,7 +669,15 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
 
     # Показать пакеты для покупки
     if callback_data == "show_packages":
-        text = get_text("choose_package", user_lang)
+        disc = await discounts.get_active_discount(user_id)
+        if disc:
+            percent = disc.get("discountValue") if disc.get("discountType") == "percentage" else None
+            if percent:
+                text = get_text("choose_package_discount", user_lang).format(percent=percent)
+            else:
+                text = get_text("choose_package", user_lang)
+        else:
+            text = get_text("choose_package", user_lang)
 
         # Если исходное сообщение содержит фото (например, размытую превью-картинку),
         # не трогаем его, а отправляем НОВОЕ сообщение со списком пакетов.
@@ -670,14 +686,14 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=text,
-                reply_markup=keyboards.get_payment_packages_keyboard(user_lang)
+                reply_markup=await keyboards.get_payment_packages_keyboard(user_lang, user_id)
             )
             await query.answer()  # Закрываем анимацию "Loading" у пользователя
         else:
             try:
                 await query.edit_message_text(
                     text=text,
-                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang)
+                    reply_markup=await keyboards.get_payment_packages_keyboard(user_lang, user_id)
                 )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
@@ -689,17 +705,25 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         package_info = payments.get_package_info(package_id, user_lang)
         
         if package_info:
-            # Логируем событие выбора пакета (еще без выбора метода оплаты)
-            await db.log_user_event(user_id, "payment_package_selected", {
-                "package_id": package_id,
-                "package_name": package_info.get('name'),
-            })
+            # log event
+            await db.log_user_event(user_id, "payment_package_selected", {"package_id": package_id, "package_name": package_info.get('name')})
+
+            # discount calculation
+            disc = await discounts.get_active_discount(user_id, package_id)
+            orig_price = package_info['price']
+            discounted_price = await discounts.price_with_discount(orig_price, disc)
+
+            if discounted_price < orig_price:
+                old = keyboards._strike(f"{orig_price} ₽")
+                price_str = f"{old} → {discounted_price} ₽"
+            else:
+                price_str = f"{discounted_price} ₽"
 
             text = get_text("package_details", user_lang).format(
                 name=package_info['name'],
                 description=package_info['description'],
                 photos=package_info['photos'],
-                price=package_info['price']
+                price=price_str
             )
             try:
                 await query.edit_message_text(
@@ -725,7 +749,7 @@ async def handle_payment_callbacks(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(text=get_text("creating_payment", user_lang))
         
         # Создаем заказ на оплату
-        order_data = await payments.create_payment_order(user_data['user_id'], package_id)
+        order_data = await payments.create_payment_order(user_data['user_id'], package_id, price_override=discounted_price)
         
         if order_data:
             # Успешно создали заказ - показываем ссылку на оплату
@@ -907,7 +931,7 @@ async def _execute_photo_processing(
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
-                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
+                    reply_markup=await keyboards.get_payment_packages_keyboard(user_lang, user_id),
                     reply_to_message_id=original_message_id
                 )
                 await db.log_user_event(user_id, "generation_attempt_insufficient_balance", {"current_balance": current_balance})
@@ -921,7 +945,7 @@ async def _execute_photo_processing(
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=get_text("insufficient_balance", user_lang).format(needed=1, current=current_balance),
-                    reply_markup=keyboards.get_payment_packages_keyboard(user_lang),
+                    reply_markup=await keyboards.get_payment_packages_keyboard(user_lang, user_id),
                     reply_to_message_id=original_message_id
                 )
                 return
@@ -1065,6 +1089,10 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
             await db.add_user_photos(user.id, photos_to_add)
         new_balance = await db.get_user_photos_balance(user.id)
         await notify_payment_success(user.id, order["package_id"], photos_to_add, new_balance)
+        try:
+            await discounts.mark_used(user.id)
+        except Exception:
+            pass
     else:
         logger.info(f"Payment order already processed or not found for payload {external_id}")
 

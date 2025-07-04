@@ -13,6 +13,7 @@ from nacl.exceptions import BadSignatureError
 
 import config
 import db
+import discounts
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class StreamPayAPI:
         signature = binascii.hexlify(crypto_sign(to_sign, self.private_key)[:crypto_sign_BYTES])
         return signature
     
-    async def create_invoice(self, user_id: int, package_id: str, external_id: str) -> Optional[Dict[str, Any]]:
+    async def create_invoice(self, user_id: int, package_id: str, external_id: str, amount: int) -> Optional[Dict[str, Any]]:
         """Создает инвойс для оплаты пакета."""
         if package_id not in PAYMENT_PACKAGES:
             logger.error(f"Неизвестный пакет: {package_id}")
@@ -84,7 +85,7 @@ class StreamPayAPI:
             "system_currency": "USDT",
             "payment_type": 1,
             'currency': "RUB", # Рубли
-            "amount": package['price'],
+            "amount": amount,
             "success_url": f"{config.BASE_URL}/payment/success",
             "fail_url": f"{config.BASE_URL}/payment/fail",
             "cancel_url": f"{config.BASE_URL}/payment/cancel",
@@ -154,7 +155,7 @@ if config.STREAMPAY_ENABLED:
 else:
     logger.info("StreamPay API not initialized - missing configuration")
 
-async def create_payment_order(user_id: int, package_id: str) -> Optional[Dict[str, Any]]:
+async def create_payment_order(user_id: int, package_id: str, price_override: int | None = None) -> Optional[Dict[str, Any]]:
     """Создает заказ на оплату и сохраняет его в БД."""
     if not streampay_api:
         logger.error("StreamPay API not available - cannot create payment order")
@@ -162,8 +163,11 @@ async def create_payment_order(user_id: int, package_id: str) -> Optional[Dict[s
 
     external_id = f"order_{user_id}_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
     
-    # Создаем инвойс через API
-    invoice_data = await streampay_api.create_invoice(user_id, package_id, external_id)
+    invoice_price = price_override if price_override is not None else PAYMENT_PACKAGES[package_id]['price']
+    # create invoice
+    # we need a temp copy of package with override amount
+    # create_invoice currently looks up package price inside, so we need new function or adapt: simplest – pass amount param
+    invoice_data = await streampay_api.create_invoice(user_id, package_id, external_id, invoice_price)
     
     if not invoice_data:
         return None
@@ -174,7 +178,7 @@ async def create_payment_order(user_id: int, package_id: str) -> Optional[Dict[s
         "user_id": user_id,
         "package_id": package_id,
         "invoice_id": invoice_data.get('invoice'),
-        "amount": PAYMENT_PACKAGES[package_id]['price'],
+        "amount": invoice_price,
         "currency": PAYMENT_PACKAGES[package_id]['currency'],
         "photos_count": PAYMENT_PACKAGES[package_id]['photos'],
         "status": "pending",
@@ -219,6 +223,11 @@ async def process_payment_callback(callback_data: Dict[str, str]) -> bool:
         if success:
             update_data["processed"] = True
             logger.info(f"Пользователю {order['user_id']} начислено {photos_to_add} фото")
+            # mark discount used
+            try:
+                await discounts.mark_used(order['user_id'])
+            except Exception:
+                pass
         else:
             logger.error(f"Ошибка начисления фото пользователю {order['user_id']}")
             return False
@@ -239,6 +248,12 @@ def get_package_info(package_id: str, lang: str = 'ru') -> Optional[Dict[str, An
         return None
     
     package = PAYMENT_PACKAGES[package_id]
+    
+    if package.get('popular_postfix'):
+        popular_postfix = package.get('popular_postfix').get(lang, package.get('popular_postfix').get('en', ''))
+    else:
+        popular_postfix = ''
+    
     return {
         'id': package_id,
         'name': package['name'].get(lang, package['name']['en']),
@@ -247,7 +262,8 @@ def get_package_info(package_id: str, lang: str = 'ru') -> Optional[Dict[str, An
         'price': package['price'],
         'stars_price': package.get('stars_price'),
         'currency': package['currency'],
-        'popular': package.get('popular', False)
+        'popular': package.get('popular', False),
+        'popular_postfix': popular_postfix,
     }
 
 def get_all_packages(lang: str = 'ru') -> Dict[str, Dict[str, Any]]:
